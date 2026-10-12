@@ -59,7 +59,19 @@ jobs:
       - name: Build rclone.aar
         run: |
           chmod +x deps/build_rclone_android.sh
-          ./deps/build_rclone_android.sh
+          export GOPROXY="https://proxy.golang.org,direct"
+          n=0
+          until [ "$n" -ge 3 ]
+          do
+            ./deps/build_rclone_android.sh && break
+            n=$((n+1))
+            echo "build_rclone_android failed, retrying ($n/3) in 5s..."
+            sleep 5
+          done
+          if [ "$n" -ge 3 ]; then
+            echo "Failed to build rclone.aar after 3 attempts"
+            exit 1
+          fi
           mkdir -p src/android/app/libs
           cp deps/build/rclone/rclone.aar src/android/app/libs/
 
