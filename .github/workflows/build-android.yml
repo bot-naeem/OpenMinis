@@ -1,0 +1,72 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Set up Android NDK & SDK
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r28
+          add-to-path: true
+
+      - name: Install gomobile
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          gomobile init
+
+      - name: Prepare build-time customization properties
+        run: |
+          cp src/android/app/provider-customization.properties.example \
+             src/android/app/provider-customization.properties
+
+      - name: Build PRoot and prepare sandbox
+        run: |
+          chmod +x deps/build_proot.sh scripts/prepare_android_sandbox.sh
+          ./deps/build_proot.sh
+          ./scripts/prepare_android_sandbox.sh
+
+      - name: Build rclone.aar
+        run: |
+          chmod +x deps/build_rclone_android.sh
+          ./deps/build_rclone_android.sh
+          mkdir -p src/android/app/libs
+          cp deps/build/rclone/rclone.aar src/android/app/libs/
+
+      - name: Build Debug APK with Gradle
+        working-directory: src/android
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenMinis-ScreenAssistant-Debug-APK
+          path: src/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 14
