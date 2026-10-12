@@ -48,6 +48,11 @@ jobs:
       - name: Build PRoot and prepare sandbox
         run: |
           chmod +x deps/build_proot.sh scripts/prepare_android_sandbox.sh
+          if [ ! -d "deps/proot/src" ]; then
+            echo "Cloning OpenMinis/proot..."
+            rm -rf deps/proot
+            git clone --depth 1 https://github.com/OpenMinis/proot.git deps/proot
+          fi
           ./deps/build_proot.sh
           ./scripts/prepare_android_sandbox.sh
 
