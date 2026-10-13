@@ -811,10 +811,37 @@ object PRootKernel {
             }
         }
 
+        // [T-android-sandbox-only] Host paths: Android filesystem locations
+        // (/data, /sdcard, /storage, /system, etc.) and paths that exist on the
+        // host outside the sandbox point directly to the host filesystem.
+        if (isHostFilesystemPath(linuxPath)) {
+            return File(linuxPath)
+        }
+
         // Fallback: resolve relative to rootfs
         if (!::rootfsManager.isInitialized) return null
         val stripped = linuxPath.removePrefix("/")
         return if (stripped.isEmpty()) rootfsManager.rootfsDir else File(rootfsManager.rootfsDir, stripped)
+    }
+
+    private val HOST_FS_PREFIXES = listOf(
+        "/sdcard",
+        "/storage",
+        "/data",
+        "/system",
+        "/vendor",
+        "/product",
+        "/odm",
+        "/oem",
+        "/apex",
+        "/dev",
+        "/proc",
+        "/sys",
+    )
+
+    fun isHostFilesystemPath(linuxPath: String): Boolean {
+        if (HOST_FS_PREFIXES.any { linuxPath == it || linuxPath.startsWith("$it/") }) return true
+        return runCatching { File(linuxPath).exists() }.getOrDefault(false)
     }
 
     /**

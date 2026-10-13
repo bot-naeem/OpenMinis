@@ -13,6 +13,23 @@ import java.io.File
  */
 object RootAccess {
 
+    /**
+     * Result of executing a command via superuser grant.
+     */
+    data class SuResult(
+        val stdout: String,
+        val stderr: String,
+        val exitCode: Int,
+    ) {
+        val stdoutFirstLine: String?
+            get() = stdout.lineSequence().firstOrNull { it.isNotBlank() }
+
+        // Destructuring compatibility for (firstLine, exitCode)
+        operator fun component1(): String? = stdoutFirstLine
+        operator fun component2(): Int = exitCode
+        operator fun component3(): String = stderr
+    }
+
     /** Paths a superuser binary is known to use across common root solutions. */
     private val SU_PATHS = arrayOf(
         "/system/bin/su",
@@ -39,25 +56,85 @@ object RootAccess {
      * uid 0. A Magisk/KernelSU prompt that has not been accepted returns false.
      */
     fun isRootGranted(): Boolean {
-        val (uidLine, _) = runSu("id") ?: return false
-        return uidLine?.contains("uid=0") == true
+        val result = runSu("id") ?: return false
+        return result.exitCode == 0 && result.stdout.contains("uid=0")
     }
 
     /**
-     * Run a command through `su -c`. Returns (first stdout line, exit code), or
-     * null when no superuser process could be started at all.
+     * Run a command through `su -c`. Drains stdout and stderr concurrently in background
+     * reader threads so pipes never block or trigger SIGPIPE on large outputs.
+     * Returns a [SuResult] containing stdout, stderr and exitCode, or null if the
+     * process could not be started at all.
      */
-    fun runSu(command: String, timeoutMs: Long = 10_000L): Pair<String?, Int>? {
+    fun runSu(
+        command: String,
+        timeoutMs: Long = 10_000L,
+        maxOutputChars: Int = 65_536,
+    ): SuResult? {
         return try {
             val process = ProcessBuilder("su", "-c", command).start()
-            val line = process.inputStream.bufferedReader().use { it.readLine() }
-            val code = if (process.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+            val stdoutBuilder = StringBuilder()
+            val stderrBuilder = StringBuilder()
+
+            // Asynchronously drain stdout and stderr to prevent pipe buffer stalls / SIGPIPE
+            val stdoutThread = Thread {
+                runCatching {
+                    process.inputStream.bufferedReader().use { reader ->
+                        val buf = CharArray(4096)
+                        var read: Int
+                        while (reader.read(buf).also { read = it } != -1) {
+                            synchronized(stdoutBuilder) {
+                                if (stdoutBuilder.length < maxOutputChars) {
+                                    val remaining = maxOutputChars - stdoutBuilder.length
+                                    stdoutBuilder.appendRange(buf, 0, minOf(read, remaining))
+                                    if (stdoutBuilder.length >= maxOutputChars) {
+                                        stdoutBuilder.append("\n[... stdout truncated at $maxOutputChars chars ...]")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            val stderrThread = Thread {
+                runCatching {
+                    process.errorStream.bufferedReader().use { reader ->
+                        val buf = CharArray(4096)
+                        var read: Int
+                        while (reader.read(buf).also { read = it } != -1) {
+                            synchronized(stderrBuilder) {
+                                if (stderrBuilder.length < maxOutputChars) {
+                                    val remaining = maxOutputChars - stderrBuilder.length
+                                    stderrBuilder.appendRange(buf, 0, minOf(read, remaining))
+                                    if (stderrBuilder.length >= maxOutputChars) {
+                                        stderrBuilder.append("\n[... stderr truncated at $maxOutputChars chars ...]")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            stdoutThread.start()
+            stderrThread.start()
+
+            val finished = process.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)
+            val exitCode = if (finished) {
                 process.exitValue()
             } else {
                 process.destroyForcibly()
-                -1
+                124 // POSIX standard timeout code
             }
-            if (line == null && code != 0) null else (line to code)
+
+            stdoutThread.join(1000)
+            stderrThread.join(1000)
+
+            val outStr = synchronized(stdoutBuilder) { stdoutBuilder.toString() }
+            val errStr = synchronized(stderrBuilder) { stderrBuilder.toString() }
+
+            SuResult(stdout = outStr, stderr = errStr, exitCode = exitCode)
         } catch (_: Exception) {
             null
         }

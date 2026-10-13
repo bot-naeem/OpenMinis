@@ -6,6 +6,7 @@ import com.openminis.app.sandbox.NativeOffloadHandler
 import com.openminis.app.sandbox.NativeOffloadRequest
 import com.openminis.app.sandbox.NativeOffloadResult
 import com.openminis.app.sandbox.RootAccess
+import org.json.JSONObject
 
 /**
  * `android-root-cli` — privileged Android control via a superuser grant (UID 0).
@@ -27,9 +28,10 @@ class RootOffloadHandler(private val context: Context) : NativeOffloadHandler {
 
     override fun handle(request: NativeOffloadRequest): NativeOffloadResult {
         val argv = request.argv.drop(1)
-        val command = argv.firstOrNull { it.isNotBlank() }?.trim()
+        val args = OffloadArgs(argv)
+        val command = args.positional.joinToString(" ").trim()
 
-        if (command.isNullOrEmpty() || command == "--help" || command == "-h" ||
+        if (command.isEmpty() || command == "--help" || command == "-h" ||
             command == "help" || command == "--version"
         ) {
             return NativeOffloadResult(
@@ -40,8 +42,37 @@ class RootOffloadHandler(private val context: Context) : NativeOffloadHandler {
 
         // Permission gate first — same shape as ShizukuOffloadHandler, so a
         // revoked grant is reported identically no matter which backend asked.
-        val args = OffloadArgs(argv)
         OffloadGate.enforce("root_cli", "android-root-cli", args, request)?.let { return it }
+
+        // Hard safety boundary: prevent brick-risk operations, mass deletions,
+        // and partition corruption regardless of user permissions.
+        val guardDecision = RootCommandGuard.check(command)
+        if (guardDecision is RootCommandGuard.Decision.Blocked) {
+            Log.w(TAG, "Root command blocked by guard: $command (${guardDecision.code})")
+            RootAuditLogger.log(
+                context = context,
+                command = command,
+                sessionId = request.sessionId,
+                exitCode = 126,
+                durationMs = 0L,
+                isBlocked = true,
+                blockReason = guardDecision.reason,
+            )
+            val errObj = JSONObject()
+                .put("ok", false)
+                .put("error", JSONObject()
+                    .put("code", guardDecision.code)
+                    .put("message", guardDecision.reason)
+                )
+                .put("data", JSONObject()
+                    .put("command", command)
+                    .put("exitCode", 126)
+                    .put("stdout", "")
+                    .put("stderr", guardDecision.reason)
+                )
+            val body = OffloadOutput.formatBody(errObj.toString(2), args)
+            return NativeOffloadResult(exitCode = 126, output = body + "\n")
+        }
 
         val granted = runCatching { RootAccess.isRootGranted() }.getOrDefault(false)
         if (!granted) {
@@ -63,33 +94,48 @@ class RootOffloadHandler(private val context: Context) : NativeOffloadHandler {
                 exitCode = 127,
                 output = errEnvelope("SPAWN_FAILED", "Could not start a superuser process for this command."),
             )
-        val (firstLine, exitCode) = result
 
-        Log.i(TAG, "root exec exit=$exitCode in ${System.currentTimeMillis() - started}ms")
+        val durationMs = System.currentTimeMillis() - started
+        Log.i(TAG, "root exec exit=${result.exitCode} in ${durationMs}ms")
 
-        // RootAccess.runSu only surfaces the first stdout line — this handler
-        // exists for interactive confirmation and diagnostics, not as a
-        // general-purpose output channel. Say so rather than returning a
-        // half-result the model would misread as complete.
-        val body = firstLine ?: ""
-        val output = if (exitCode == 124) {
-            "[timeout after ${timeoutMs}ms] $body"
+        RootAuditLogger.log(
+            context = context,
+            command = command,
+            sessionId = request.sessionId,
+            exitCode = result.exitCode,
+            durationMs = durationMs,
+            isBlocked = false,
+        )
+
+        val data = JSONObject()
+            .put("command", command)
+            .put("exitCode", result.exitCode)
+            .put("stdout", result.stdout)
+            .put("stderr", result.stderr)
+
+        return if (result.exitCode == 0) {
+            okEnvelope(data, args)
         } else {
-            buildString {
-                append("{")
-                append("\"command\":").append(jsonString(command)).append(",")
-                append("\"exitCode\":").append(exitCode).append(",")
-                append("\"stdout_first_line\":").append(jsonString(body)).append(",")
-                append("\"note\":").append(
-                    jsonString(
-                        "Only the first stdout line is returned. For full output, or for " +
-                            "anything interactive, write to a file under /var/minis/shared " +
-                            "and read it back with the read tool."
-                    )
-                ).append("}")
-            }
+            val errObj = JSONObject()
+                .put("ok", false)
+                .put("error", JSONObject()
+                    .put("code", if (result.exitCode == 124) "TIMEOUT" else "COMMAND_FAILED")
+                    .put("message", if (result.exitCode == 124) {
+                        "Command timed out after ${timeoutMs}ms"
+                    } else {
+                        result.stderr.ifBlank { "Command exited with code ${result.exitCode}" }
+                    })
+                )
+                .put("data", data)
+            val body = OffloadOutput.formatBody(errObj.toString(2), args)
+            NativeOffloadResult(exitCode = result.exitCode, output = body + "\n")
         }
-        return NativeOffloadResult(exitCode = exitCode, output = output)
+    }
+
+    private fun okEnvelope(payload: Any, args: OffloadArgs): NativeOffloadResult {
+        val obj = JSONObject().put("ok", true).put("data", payload)
+        val body = OffloadOutput.formatBody(obj.toString(2), args)
+        return NativeOffloadResult(0, body + "\n")
     }
 
     private fun errEnvelope(code: String, message: String): String =
@@ -123,10 +169,11 @@ class RootOffloadHandler(private val context: Context) : NativeOffloadHandler {
               android-root-cli "<shell command>" [--timeout-ms N]
 
             This is the root counterpart of android-shizuku-cli and reaches
-            strictly further: full /data, /system remount, block devices.
-            Only the FIRST line of stdout is returned — for full output, or for
-            anything interactive, redirect to a file under /var/minis/shared and
-            read it back with the read tool.
+            strictly further: full /data, /system inspection, device diagnosis.
+            Both stdout and stderr are returned directly in the output JSON.
+
+            Safety: RootCommandGuard unconditionally blocks raw block device writes,
+            mass partition wipes, and destructive system mounts to protect the device.
 
             Requires a granted superuser prompt, and the root_cli permission in
             [Settings -> Permissions] (off by default).
