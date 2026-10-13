@@ -7194,11 +7194,12 @@ class ChatViewModel(
      * The rest of the prompt is not model-specific on Android.
      */
     private fun systemPromptFor(provider: LLMProvider, prompt: String?): String? {
-        val prefix = com.openminis.app.auth.ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT
-        if (prompt == null || prefix.isEmpty()) return prompt
-        val bare = if (prompt.startsWith(prefix)) prompt.removePrefix(prefix).trimStart('\n') else prompt
         val oauth = (provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true
-        return if (oauth) "$prefix\n\n$bare" else bare
+        if (!oauth || prompt == null) return prompt
+        val prefix = com.openminis.app.auth.ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT
+        if (prefix.isEmpty()) return prompt
+        val bare = if (prompt.startsWith(prefix)) prompt.removePrefix(prefix).trimStart('\n') else prompt
+        return "$prefix\n\n$bare"
     }
 
     private fun isBoundToAbandonedModel(): Boolean =
