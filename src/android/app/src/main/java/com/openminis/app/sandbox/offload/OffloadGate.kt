@@ -63,9 +63,44 @@ internal object OffloadGate {
         if (allow(toolName, displayName, request?.sessionId)) return null
         val body = JSONObject()
             .put("error", "permission_denied")
-            .put("message",
-                "Agent is not allowed to use $displayName. Open Settings → Permissions to change.")
+            .put("tool", toolName)
+            // Q4: the old message was one sentence for all eighteen
+            // capabilities, which sent the model to a page with sixteen rows
+            // and told it nothing about which one was at fault — or, for root,
+            // that there was a second thing to do afterwards (accept the su
+            // prompt). Each of the three privileged backends now says what is
+            // missing and where to fix it.
+            .put("message", denialMessage(toolName, displayName))
             .toString()
         return NativeOffloadResult(126, OffloadOutput.formatBody(body, args) + "\n")
     }
+
+    /**
+     * The message the model relays when a capability is switched off.
+     *
+     * Not localised here: this string crosses the offload IPC into the guest
+     * shell, where it is read by a model rather than by a person, and the
+     * three privileged cases carry instructions the model must follow rather
+     * than translate. The user-facing copy of the same three facts lives in
+     * the permissions screen itself.
+     */
+    private fun denialMessage(toolName: String, displayName: String): String =
+        when (toolName) {
+            "root_cli" ->
+                "Root is switched off. Tell the user: Minis Settings -> Permissions, " +
+                    "switch on Root, and accept the superuser prompt (Magisk or KernelSU). " +
+                    "Do not retry until they confirm."
+            "shizuku_cli" ->
+                "Shizuku is switched off. Tell the user: Minis Settings -> Permissions, " +
+                    "switch on Shizuku, and make sure the Shizuku service is running. " +
+                    "Do not retry until they confirm."
+            "a11y_cli" ->
+                "Accessibility control is switched off. Tell the user: Minis Settings -> " +
+                    "Permissions, switch it on, then enable the Minis service in system " +
+                    "Accessibility settings. Do not retry until they confirm."
+            else ->
+                "Agent is not allowed to use $displayName. " +
+                    "Tell the user: Minis Settings -> Permissions, find \"$displayName\", " +
+                    "and switch it on. Do not retry until they confirm."
+        }
 }

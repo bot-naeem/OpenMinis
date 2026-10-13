@@ -8,24 +8,32 @@ import org.json.JSONObject
 import java.io.File
 
 object FileReadTool {
-    const val NAME = "file_read"
+    const val NAME = ToolNames.READ
 
     fun definition(): AgentToolDefinition = AgentToolDefinition(
         name = NAME,
-        description = "Read a file from the Linux filesystem. Faster than shell_execute for reading files — no shell overhead. Returns file content with metadata. Rejects binary files.",
+        description = "Read a file. Faster than a shell command — no process, no shell overhead. " +
+            "Text files come back as content. Images (jpg, png, gif, webp, bmp) come back as an " +
+            "attachment the model can look at directly. Output is truncated at max_length chars, " +
+            "default 15000 and hard-capped at 80000; when truncated the header ends with " +
+            "next_offset=N — pass that as offset to continue. Binary files are rejected.",
         parameters = mapOf(
             "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'Read Python script contents', 'Check system configuration file'). Use the same language as the user."),
             "path" to AgentToolParam("string", "Absolute Linux path to read (e.g. /var/minis/workspace/data.csv)"),
+            // [T-android-tool-surface] read_image folded into read: the model picks a path and
+            // the handler decides whether that path is text or pixels. `prompt` only means
+            // something for an image.
+            "prompt" to AgentToolParam("string", "For images only: what to look for in them. Ignored for text files."),
             "offset" to AgentToolParam("integer", "1-based line number to start reading from (default: 1). Ignored when direction is 'tail'. If a previous read was truncated, its header ends with next_offset=N — pass that as offset to continue from where it stopped."),
             "lines" to AgentToolParam("integer", "Maximum number of lines to return (default: all lines up to max_length)"),
             "max_length" to AgentToolParam("integer", "Maximum character length of returned content (default: 15000)"),
             "direction" to AgentToolParam("string", "Read direction: 'head' (from start, default) or 'tail' (from end of file)"),
         ),
         required = listOf("tool_title", "path"),
-        propertyOrdering = listOf("tool_title", "path", "offset", "lines", "direction", "max_length"),
+        propertyOrdering = listOf("tool_title", "path", "prompt", "offset", "lines", "direction", "max_length"),
     )
 
-    fun execute(argsJson: String, sessionId: String, context: Context): ToolExecutionResult {
+    suspend fun execute(argsJson: String, sessionId: String, context: Context): ToolExecutionResult {
         return try {
             val args = JSONObject(argsJson)
             val path = args.optString("path", "")
@@ -51,6 +59,21 @@ object FileReadTool {
             }
 
             // T123: per-session resolver — see FileWriteTool for rationale.
+            // [T-android-sandbox-only] Reads get the privileged-path check but
+            // not the protected one: refusing to READ /system would break
+            // ordinary diagnostics (`getprop`-style inspection the model does
+            // constantly), and reading cannot brick anything. Another app's
+            // private data is still a real disclosure, so it prompts.
+            if (FileToolGuard.decide(path) == FileToolGuard.Decision.NEEDS_PERMISSION &&
+                !FileToolGuard.authorizeRead(path, NAME, sessionId)
+            ) {
+                return ToolExecutionResult(
+                    "Error: the user declined the read of $path. Do not retry it in this conversation.",
+                    false,
+                    toolTitle = toolTitle,
+                )
+            }
+
             val file = PRootKernel.resolveSessionHostPath(sessionId, path, context)
                 ?: return ToolExecutionResult("Error: Cannot resolve path: $path", false, toolTitle = toolTitle)
 

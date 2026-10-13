@@ -154,9 +154,9 @@ class SkillScanParityTest {
         assertTrue(body.contains("skillPromptFragment(activeSessionId)"))
     }
 
-    @Test fun `shell and file_write queue a background rescan`() {
-        assertTrue(chatVm.contains("skillRepository?.requestReload(\"shell_execute\")"))
-        assertTrue(chatVm.contains("skillRepository?.requestReload(\"file_write\", force = true)"))
+    @Test fun `bash and write queue a background rescan`() {
+        assertTrue(chatVm.contains("skillRepository?.requestReload(ToolNames.BASH)"))
+        assertTrue(chatVm.contains("skillRepository?.requestReload(ToolNames.WRITE, force = true)"))
     }
 
     @Test fun `restore and returning to the app queue a rescan`() {

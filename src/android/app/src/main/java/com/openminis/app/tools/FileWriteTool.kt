@@ -9,7 +9,7 @@ import com.openminis.app.sandbox.PRootKernel
 import org.json.JSONObject
 
 object FileWriteTool {
-    const val NAME = "file_write"
+    const val NAME = ToolNames.WRITE
 
     fun definition(): AgentToolDefinition = AgentToolDefinition(
         name = NAME,
@@ -31,7 +31,7 @@ object FileWriteTool {
         propertyOrdering = listOf("tool_title", "path", "content", "append", "create_dirs"),
     )
 
-    fun execute(argsJson: String, sessionId: String, context: Context): ToolExecutionResult {
+    suspend fun execute(argsJson: String, sessionId: String, context: Context): ToolExecutionResult {
         return try {
             val args = JSONObject(argsJson)
             val path = args.optString("path", "")
@@ -42,6 +42,24 @@ object FileWriteTool {
 
             if (path.isBlank()) {
                 return ToolExecutionResult("Error: 'path' is required", false, toolTitle = toolTitle)
+            }
+
+            // [T-android-sandbox-only] The file tools resolve on the host, so
+            // "may I write here" is no longer answered by the sandbox. Checked
+            // before anything is opened, alongside the offload-placeholder guard.
+            when (FileToolGuard.decide(path)) {
+                FileToolGuard.Decision.PROTECTED ->
+                    return ToolExecutionResult(FileToolGuard.refusalMessage(path), false, toolTitle = toolTitle)
+                FileToolGuard.Decision.NEEDS_PERMISSION ->
+                    if (!FileToolGuard.authorizeWrite(path, NAME, sessionId)) {
+                        return ToolExecutionResult(
+                            "Error: the user declined the write to $path. Do not retry it in " +
+                                "this conversation.",
+                            false,
+                            toolTitle = toolTitle,
+                        )
+                    }
+                FileToolGuard.Decision.ALLOW -> Unit
             }
 
             // [T-offload-placeholder-write-guard] (GH#374) Refuse before opening

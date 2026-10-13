@@ -108,7 +108,6 @@ fun SettingsScreen(
     // OEM autostart guidance). Default no-op so older callers/tests
     // don't need to be retrofitted.
     onBackgroundClick: () -> Unit = {},
-    onExecutionEnvironmentClick: () -> Unit = {},
     // Hook accepted for forward-compat with AppNavigation's About route. The
     // About row below still has a TODO onClick in HEAD; future settings-bucket
     // work will wire this through.
@@ -197,13 +196,6 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_agent_tools),
                     subtitle = stringResource(R.string.settings_agent_tools_subtitle),
                     onClick = onAgentToolsClick,
-                )
-                SettingsItem(
-                    icon = Icons.Outlined.Terminal,
-                    iconColor = Color(0xFFFF9500),
-                    title = stringResource(R.string.settings_execution_environment),
-                    subtitle = stringResource(R.string.settings_execution_environment_subtitle),
-                    onClick = onExecutionEnvironmentClick,
                 )
                 SettingsItem(
                     icon = Icons.Outlined.Groups,

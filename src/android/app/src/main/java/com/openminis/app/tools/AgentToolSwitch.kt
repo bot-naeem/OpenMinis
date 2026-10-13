@@ -1,5 +1,7 @@
 package com.openminis.app.tools
 
+import com.openminis.app.tools.ToolNames
+
 import android.content.Context
 
 /**
@@ -40,12 +42,12 @@ enum class AgentToolSwitch(val key: String, val defaultValue: Boolean) {
             context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
         /** The switch governing a tool name; null = always available. */
-        fun governing(toolName: String): AgentToolSwitch? = when (toolName) {
-            "browser_use" -> BROWSER
-            // [T-sub-agents-v1] The renamed tool plus the two names
-            // shipped builds wrote, so the switch still governs a
-            // replayed call from an older transcript.
-            "subagent_task", "delegate_task", "agent_status" -> AGENTS
+        fun governing(toolName: String): AgentToolSwitch? = when (ToolNames.canonical(toolName)) {
+            ToolNames.BROWSER -> BROWSER
+            // [T-sub-agents-v1] [T-android-tool-surface] canonical() folds
+            // subagent_task/delegate_task/agent_status into `subagent`, so a
+            // replayed call from an older transcript is still governed.
+            ToolNames.SUBAGENT -> AGENTS
             else -> null
         }
 

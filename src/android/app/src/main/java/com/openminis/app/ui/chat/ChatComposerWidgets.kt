@@ -1,5 +1,7 @@
 package com.openminis.app.ui.chat
 
+import com.openminis.app.tools.ToolNames
+
 // [T-android-split-chat] Composer/input widgets + tool preview/status bar
 // extracted verbatim from ChatScreen.kt: AttachmentChip, InputCircleButton,
 // MicButton, ToolPreviewThumbnail, FloatingToolStatusBar, ThinkingLevelPicker.
@@ -563,7 +565,7 @@ private fun ToolPreviewThumbnail(
     // bottom while the tool is RUNNING/STREAMING/PENDING. Mirrors iOS
     // ToolLiveSheet.swift:1926 small overlay (5pt monospace, white .8 on
     // black .6).
-    val isShellTool = block.toolName == "shell_execute"
+    val isShellTool = ToolNames.matches(block.toolName, ToolNames.BASH)
     val isLive = block.toolStatus == ToolBlockStatus.RUNNING ||
         block.toolStatus == ToolBlockStatus.STREAMING ||
         block.toolStatus == ToolBlockStatus.PENDING
@@ -595,9 +597,9 @@ private fun ToolPreviewThumbnail(
             .shadow(elevation = 10.dp, shape = thumbnailShape, ambientColor = Color.Black.copy(alpha = 0.15f), spotColor = Color.Black.copy(alpha = 0.25f))
             .clip(thumbnailShape)
             .background(
-                when (block.toolName) {
-                    "file_read", "file_write" -> ChatColors.secondaryBg
-                    "file_edit" -> Color(0xFF1A1A1E)
+                when (ToolNames.canonical(block.toolName)) {
+                    ToolNames.READ, ToolNames.WRITE -> ChatColors.secondaryBg
+                    ToolNames.EDIT -> Color(0xFF1A1A1E)
                     else -> Color(0xFF1A1A1E)
                 }
             )
@@ -680,8 +682,8 @@ private fun ToolPreviewThumbnail(
             }
             .clickable(onClick = onClick),
     ) {
-        when (block.toolName) {
-            "shell_execute" -> {
+        when (ToolNames.canonical(block.toolName)) {
+            ToolNames.BASH -> {
                 // iOS: command title + last 12 lines of output in green mono
                 val command = extractShellCommand(args, block)
                 Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)) {
@@ -714,7 +716,7 @@ private fun ToolPreviewThumbnail(
                 }
             }
 
-            "file_edit" -> {
+            ToolNames.EDIT -> {
                 // iOS: diff preview — old lines in red, new lines in green
                 val oldStr = args.optString("old_string", "")
                     .ifEmpty { extractPartialJsonString("old_string", block.toolArgs) ?: "" }
@@ -755,7 +757,7 @@ private fun ToolPreviewThumbnail(
                 }
             }
 
-            "file_read", "file_write" -> {
+            ToolNames.READ, ToolNames.WRITE -> {
                 // iOS ToolPreviewThumbnail.textPreview: filename header + last N lines of
                 // content. For file_write during streaming, prefer partial `content` from
                 // toolArgs JSON (mirrors iOS block.streamingFileContent).
@@ -764,10 +766,10 @@ private fun ToolPreviewThumbnail(
                 val rawName = if (path.contains("/")) path.substringAfterLast("/") else path
                 val header = when {
                     rawName.isNotEmpty() -> rawName
-                    block.toolName == "file_write" -> "Write file"
+                    ToolNames.matches(block.toolName, ToolNames.WRITE) -> "Write file"
                     else -> "Read file"
                 }
-                val displayText = if (block.toolName == "file_write") {
+                val displayText = if (ToolNames.matches(block.toolName, ToolNames.WRITE)) {
                     args.optString("content", "")
                         .ifEmpty { extractPartialJsonString("content", block.toolArgs) ?: "" }
                         .ifEmpty { block.content }
@@ -799,7 +801,7 @@ private fun ToolPreviewThumbnail(
                 }
             }
 
-            "memory_write", "memory_get" -> {
+            ToolNames.MEMORY -> {
                 // iOS ToolPreviewThumbnail: header = action name, body = last
                 // lines of memory content. memory_write takes content from
                 // toolArgs (the text being saved); memory_get takes it from
@@ -807,7 +809,7 @@ private fun ToolPreviewThumbnail(
                 // queried keywords. Mirrors ToolDetailSheet's resolution
                 // (ChatScreen.kt:4581) so the thumbnail isn't an empty pink
                 // icon while the rest of the UI shows real text.
-                val memContent = if (block.toolName == "memory_write") {
+                val memContent = if (ToolNames.matches(block.toolName, ToolNames.MEMORY)) {
                     args.optString("content", "")
                         .ifEmpty { extractPartialJsonString("content", block.toolArgs) ?: "" }
                         .ifEmpty { block.content }
@@ -816,7 +818,7 @@ private fun ToolPreviewThumbnail(
                 }
                 val keywords = args.optString("keywords", "")
                     .ifEmpty { extractPartialJsonString("keywords", block.toolArgs) ?: "" }
-                val displayText = if (block.toolName == "memory_get" && keywords.isNotEmpty()) {
+                val displayText = if (ToolNames.matches(block.toolName, ToolNames.MEMORY) && keywords.isNotEmpty()) {
                     "Keywords: $keywords\n$memContent"
                 } else memContent
                 Column(modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)) {
@@ -880,7 +882,7 @@ private fun ToolPreviewThumbnail(
                 }
             }
 
-            "browser_use" -> {
+            ToolNames.BROWSER -> {
                 // Prefer live WebView snapshot while the tool is running; fall back to
                 // any saved imageFilePath, then globe icon.
                 // T285: decode the saved screenshot off the main thread —
@@ -1236,13 +1238,13 @@ internal fun FloatingToolStatusBar(
                 // scope); ToolPreviewThumbnail uses it for browser_use blocks
                 // whose action did not produce a screenshot.
                 val fallbackImagePath = remember(block.id, toolBlocks) {
-                    if (block.toolName != "browser_use" || block.imageFilePath != null) null
+                    if (!ToolNames.matches(block.toolName, ToolNames.BROWSER) || block.imageFilePath != null) null
                     else {
                         val blockIdx = toolBlocks.indexOfFirst { it.id == block.id }
                         if (blockIdx <= 0) null
                         else (blockIdx - 1 downTo 0).firstNotNullOfOrNull { i ->
                             val prev = toolBlocks[i]
-                            if (prev.toolName == "browser_use") prev.imageFilePath else null
+                            if (ToolNames.matches(prev.toolName, ToolNames.BROWSER)) prev.imageFilePath else null
                         }
                     }
                 }

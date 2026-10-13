@@ -67,7 +67,7 @@ data class PrefilledToolCall(
         .put("args", args())
 
     companion object {
-        const val SHELL_TOOL = "shell_execute"
+        const val SHELL_TOOL = com.openminis.app.tools.ToolNames.BASH
 
         /** Same limits as iOS ScheduledPresetToolCall. */
         const val MAX_COMMAND_LENGTH = 16_000

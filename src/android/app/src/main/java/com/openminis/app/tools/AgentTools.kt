@@ -47,22 +47,45 @@ object AgentTools {
         // enum is never an empty list (which some providers reject).
         rosterNames: List<String> = listOf(SubAgentDefinition.BUILT_IN_NAME),
     ): List<AgentToolDefinition> = buildList {
+        // [T-android-sandbox-only] read now covers images too, so
+        // ReadImageTool.definition() is folded in and its own schema is gone.
+        // Visibility of `read` is ungated: an image the model cannot see is
+        // better surfaced as a tool error than hidden behind a schema it never
+        // receives.
         add(shellExecuteDefinition())
         add(FileReadTool.definition())
         add(FileWriteTool.definition())
         add(FileEditTool.definition())
-        if (supportsImageInput || visionGroupConfigured) {
-            add(ReadImageTool.definition())
-        }
         if (browserEnabled) add(browserUseDefinition())
-        if (memoryEnabled) {
-            if (!isHelper) add(memoryWriteDefinition())
-            add(memoryGetDefinition())
-        }
+        add(AndroidTool.definition())
+        if (memoryEnabled) add(memoryDefinition())
         if (!isHelper && delegateEnabled) {
             add(subAgentTaskDefinition(rosterNames))
         }
     }
+
+    /**
+     * [T-android-tool-surface] memory_write and memory_get collapsed into one
+     * tool: the two schemas shared `tool_title` and nothing else, and paid for
+     * two tool headers per request. Mode is inferred from [MEMORY_SCOPE_WRITE]:
+     * a `content` argument writes, its absence searches.
+     */
+    private fun memoryDefinition(): AgentToolDefinition = AgentToolDefinition(
+        name = ToolNames.MEMORY,
+        description = "Read and write persistent memory that survives across sessions. " +
+            "Pass `content` to save a memory entry to today's daily log (YYYY-MM-DD.md); omit it " +
+            "to search memory instead, optionally narrowed by `scope` and `keywords`. " +
+            "GLOBAL.md is read-only — saved entries land in the daily log. " +
+            "Never store passwords, API keys or tokens.",
+        parameters = mapOf(
+            "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+            "content" to AgentToolParam("string", "The memory entry to save. Include this to write; omit it to search. Concise Markdown with a short heading (## Topic) and context about what was done or learned."),
+            "scope" to AgentToolParam("string", "Search scope when not writing: 'daily' (today's log only, default) or 'all' (daily logs plus GLOBAL.md)."),
+            "keywords" to AgentToolParam("string", "Space-separated keywords for fuzzy matching during a search (e.g. 'python preference'). All keywords must appear in a line or its surrounding context. Leave empty to return the whole file."),
+        ),
+        required = listOf("tool_title"),
+        propertyOrdering = listOf("tool_title", "content", "scope", "keywords"),
+    )
 
     /**
      * [T-sub-agents-v1] The one sub agent tool: delegate, and inspect or stop
@@ -86,20 +109,27 @@ object AgentTools {
     private fun subAgentTaskDefinition(rosterNames: List<String>): AgentToolDefinition =
         AgentToolDefinition(
             name = SubAgentDefinition.TOOL_NAME,
-            description = "Delegate a self-contained task to a sub agent — its own isolated context and tool loop, in a hidden child session running concurrently with you — and inspect or stop the ones you started. `action` defaults to `delegate`.\n\nDELEGATE work needing many rounds of exploration (reading lots of files or pages, trial-and-error), producing bulk output you only need a conclusion from, or splitting into independent sub-problems you can run in parallel (several calls in one turn). DO NOT delegate what you can finish in one or two tool calls, what needs the user's confirmation mid-way, or work depending on nuances of this conversation you cannot restate. A sub agent cannot see this conversation and has no memory: write `task` as a complete brief for a capable colleague who just walked in — goal, constraints, where things are, what exactly to return. It costs a full model run, so nothing trivial. Only 3 run at once, but delegate everything you need anyway: extras return status=queued and start as slots free, so never re-delegate a queued task or wait for a slot.\n\nwait=false (default) returns at once with status=running and a job_id; the result arrives later as a NEW MESSAGE prefixed [Background task finished …] (also on cancel/timeout/failure). End your turn when you have nothing else to do — never poll in a loop, never promise to report back. You do NOT need action=status to receive results.",
+            description = "Start a sub agent on a self-contained task. It runs in its own hidden " +
+                "session with a fresh context and its own tool loop, concurrently with you, and you " +
+                "do not see this conversation. Write `task` as a complete standalone brief for " +
+                "someone who just walked in: goal, constraints, where things are, what to return. " +
+                "Costs a full model run per delegation, and at most 3 run at once. " +
+                "wait=false (default) returns immediately with a job_id; the result arrives later as " +
+                "a new message, so do not poll for it. wait=true blocks and returns the result inline. " +
+                "Use action=status/steer/cancel/resume to manage jobs you already started.",
             parameters = mapOf(
-            "tool_title" to AgentToolParam("string", "A concise 5-10 word summary shown to the user on the block in the tool bar and in the transcript (e.g. 'Survey repo test layout', 'Check on the research agent'). Use the same language as the user."),
-            "action" to AgentToolParam("string", "\"delegate\" (default): start a sub agent on `task`. \"status\": report this conversation's sub agents — state (queued/running/done/cancelled/failed/interrupted), current tool, elapsed, model, finished results; `job_id` for one, omit for all. \"steer\": course-correct a RUNNING one without stopping it (see `message`). \"cancel\": stop the one named by `job_id`; its partial result is still posted back. \"resume\": restart runs the app lost when it was killed (they report `interrupted`); `job_id`/`child_session_id` for one, omit both for all.", enumValues = listOf("delegate", "status", "steer", "cancel", "resume")),
-            "task" to AgentToolParam("string", "action=delegate only, required. The complete, self-contained brief: goal, success criteria, relevant paths/URLs, constraints, and exactly what to return. The sub agent sees nothing else."),
-            "agent" to AgentToolParam("string", "action=delegate only. Which sub agent runs this task. Pick the one whose description matches the work; omit it to use the general one.", enumValues = rosterNames),
-            "model_choice" to AgentToolParam("string", "action=delegate only, and only when the chosen sub agent is set to Auto — one the user pinned to a group ignores it. DEFAULT TO \"same_as_me\". The user picked the model this conversation runs on, and that choice covers the work you delegate from it: a sub agent on a different model can cost far more, or be far weaker, than what they chose, and they never see it happen. Only depart from it when the task itself gives you a specific reason, judged by what the task demands and not by how long it will take. \"same_as_me\" (default): this conversation's model — anything continuing the work at hand, and every case where you are unsure. \"default_model\": the user's strongest group — only when this task clearly needs more capability than the current model, e.g. multi-step reasoning, design judgment, ambiguous requirements where a wrong answer is expensive. \"sub_model\": the user's light group — only when the task is clearly mechanical and well-bounded, verifiable at a glance (collecting files against a list, format conversion, fixed commands, lookups).", enumValues = listOf("same_as_me", "default_model", "sub_model")),
-            "context" to AgentToolParam("string", "action=delegate only. Optional raw material to hand over verbatim (file excerpts, error output, a list of paths). Appended to the task."),
-            "max_minutes" to AgentToolParam("integer", "action=delegate only. Wall-clock budget in minutes (default 10, maximum 60). The sub agent is stopped when it runs out and whatever it produced so far is returned with status=timeout."),
-            "wait" to AgentToolParam("boolean", "action=delegate only. false (default): return at once with status=running; the result is posted here as a new message when done. true: block until it finishes and return the result here — only when the next step cannot proceed without it. If the user sends a message while you wait, the run moves to the background and the call returns status=running."),
-            "progress_report" to AgentToolParam("string", "action=delegate only. Mid-run [Background task progress …] messages (status, current tool, elapsed, latest message). \"none\" (default): final result only. \"frequent\": every 15s when something changed. \"moderate\": once a minute. Each costs you a turn — leave at none unless the user asked to follow along or you must react mid-way. Answer one with at most a short sentence, or just carry on; never re-delegate or poll because of one. Ignored when wait=true.", enumValues = listOf("none", "frequent", "moderate")),
-            "job_id" to AgentToolParam("string", "action=status/steer/cancel. The job_id this tool returned when it started the sub agent (a prefix is accepted). Required for steer and cancel; omit on status to list every sub agent of this conversation."),
-            "message" to AgentToolParam("string", "action=steer only, required. The correction, phrased as an instruction to the running sub agent (e.g. 'focus on pricing, skip the migration notes'). Use when new information changes what it should do — it keeps the work already done, unlike cancelling and re-delegating. Read at its next turn, so a running tool call is not interrupted; if the run finishes first the result reports the steer as missed."),
-            "child_session_id" to AgentToolParam("string", "action=resume only, optional. The child_session_id of one interrupted sub agent to restart. Omit to resume every interrupted sub agent in this conversation."),
+            "tool_title" to AgentToolParam("string", "A concise 5-10 word summary shown to the user on the block. Use the same language as the user."),
+            "action" to AgentToolParam("string", "delegate (default): start a sub agent on `task`. status: list this conversation's sub agents and their state. steer: correct a RUNNING one. cancel: stop one by `job_id`. resume: restart an interrupted one.", enumValues = listOf("delegate", "status", "steer", "cancel", "resume")),
+            "task" to AgentToolParam("string", "action=delegate only, required. The complete, self-contained brief: goal, success criteria, relevant paths/URLs, constraints, and exactly what to return."),
+            "agent" to AgentToolParam("string", "action=delegate only. Which sub agent runs this task; omit to use the general one.", enumValues = rosterNames),
+            "model_choice" to AgentToolParam("string", "action=delegate only. Which model runs it: same_as_me (default), default_model for the hardest tasks, sub_model for mechanical well-bounded ones. Ignored unless the sub agent is set to Auto.", enumValues = listOf("same_as_me", "default_model", "sub_model")),
+            "context" to AgentToolParam("string", "action=delegate only. Raw material to hand over verbatim (file excerpts, error output, a list of paths). Appended to the task."),
+            "max_minutes" to AgentToolParam("integer", "action=delegate only. Wall-clock budget in minutes (default 10, max 60). On overrun it is stopped and returns what it produced with status=timeout."),
+            "wait" to AgentToolParam("boolean", "action=delegate only. false (default): return at once with status=running, result arrives later as a new message. true: block and return the result inline — only when the next step cannot proceed without it."),
+            "progress_report" to AgentToolParam("string", "action=delegate only. Mid-run progress messages. none (default), frequent (15s), moderate (1min). Ignored when wait=true.", enumValues = listOf("none", "frequent", "moderate")),
+            "job_id" to AgentToolParam("string", "The job_id a previous delegate returned. Required for steer and cancel; omit on status to list all."),
+            "message" to AgentToolParam("string", "action=steer only, required. The correction, as an instruction to the running sub agent. Read at its next turn, so it does not interrupt the current tool call."),
+            "child_session_id" to AgentToolParam("string", "action=resume only, optional. One interrupted sub agent to restart; omit to resume all of them."),
             ),
             required = listOf("tool_title"),
             propertyOrdering = listOf(
@@ -109,43 +139,29 @@ object AgentTools {
             ),
         )
 
-    // Aligned with iOS AIChatViewModel.swift:4982-4993
-    private fun shellExecuteDefinition(): AgentToolDefinition {
-        val env = com.openminis.app.sandbox.ExecutionEnvironmentRepository.currentEnvironment.value
-        val desc = when (env) {
-            com.openminis.app.sandbox.ExecutionEnvironment.SANDBOX ->
-                "Execute a command in an isolated Linux process (Alpine Linux via PRoot). " +
-                "The command runs via /bin/sh -c with stdout and stderr merged. " +
-                "Each invocation spawns a fresh process — there is no shared terminal session. " +
-                "Default timeout is 15 minutes."
-            com.openminis.app.sandbox.ExecutionEnvironment.HOST_SHELL ->
-                "Execute a command directly on the Android host system (/system/bin/sh). " +
-                "Standard Android environment with access to am, pm, settings, and shared storage (/sdcard). " +
-                "Each invocation spawns a fresh process. Default timeout is 15 minutes."
-            com.openminis.app.sandbox.ExecutionEnvironment.SHIZUKU ->
-                "Execute a privileged command via Shizuku ADB shell (UID 2000). " +
-                "Full ADB privileges to control apps (am, pm), inject input (input tap/key), and manage system settings. " +
-                "Default timeout is 15 minutes."
-            com.openminis.app.sandbox.ExecutionEnvironment.ROOT ->
-                "Execute a command with full Root privileges (su, UID 0). " +
-                "Unrestricted access to the entire Android operating system, Linux device nodes (/dev), and root files. " +
-                "Be extremely careful with destructive operations. Default timeout is 15 minutes."
-        }
-        return AgentToolDefinition(
-            name = "shell_execute",
-            description = desc,
-        parameters = mapOf(
-            "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'Install Python data analysis packages', 'List files in home directory'). Use the same language as the user."),
-            "command" to AgentToolParam("string", "The shell command to execute. Supports multi-line commands directly — no special escaping needed. Keep under 1000 chars; for longer scripts, write to a file with file_write first, then run it."),
-            // [T-android-parity-fixes] State the ceiling. It used to say only "use
-            // a larger value" while values above 900 were silently cut to 900.
-            "timeout" to AgentToolParam("integer", "Timeout in seconds (default: 900, maximum: 3600 — larger values are capped at 3600). Use a larger value for long-running commands like package installs."),
-            "delay" to AgentToolParam("integer", "Delay in seconds before execution begins. The tool blocks the agent flow during this wait WITHOUT occupying the shell, so other concurrent tasks can use it. Use this instead of sleep commands to avoid resource contention."),
-        ),
-        required = listOf("tool_title", "command"),
-        propertyOrdering = listOf("tool_title", "command", "timeout", "delay"),
-    )
-    }
+    // [T-android-sandbox-only] There is no longer an environment to branch on:
+    // the agent always runs in the PRoot Alpine sandbox. Privileged host work
+    // goes through the `android` tool, which reaches the offload IPC layer.
+    private fun shellExecuteDefinition(): AgentToolDefinition =
+        AgentToolDefinition(
+            name = ToolNames.BASH,
+            description = "Execute a shell command in the Alpine Linux sandbox. " +
+                "Runs via /bin/sh -c with stdout and stderr merged. Each invocation is a fresh " +
+                "process — there is no shared terminal session. Output is truncated; the full text " +
+                "is saved to a file whose path is returned when that happens. " +
+                "The sandbox has no access to the host Android system: for am/pm/settings, " +
+                "notifications, and privileged work use the `android` tool instead.",
+            parameters = mapOf(
+                "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'Install Python data analysis packages', 'List files in home directory'). Use the same language as the user."),
+                "command" to AgentToolParam("string", "The shell command to execute. Supports multi-line commands directly — no special escaping needed. Keep under 1000 chars; for longer scripts, write to a file with file_write first, then run it."),
+                // [T-android-parity-fixes] State the ceiling. It used to say only "use
+                // a larger value" while values above 900 were silently cut to 900.
+                "timeout" to AgentToolParam("integer", "Timeout in seconds (default: 900, maximum: 3600 — larger values are capped at 3600). Use a larger value for long-running commands like package installs."),
+                "delay" to AgentToolParam("integer", "Delay in seconds before execution begins. The tool blocks the agent flow during this wait WITHOUT occupying the shell, so other concurrent tasks can use it. Use this instead of sleep commands to avoid resource contention."),
+            ),
+            required = listOf("tool_title", "command"),
+            propertyOrdering = listOf("tool_title", "command", "timeout", "delay"),
+        )
 
     // Aligned with iOS AIChatViewModel.swift browser_use definition
     private fun browserUseDefinition(): AgentToolDefinition = AgentToolDefinition(
@@ -206,35 +222,5 @@ object AgentTools {
         ),
         required = listOf("tool_title", "action"),
         propertyOrdering = listOf("tool_title", "action", "tab_id", "url", "selector", "text", "coordinate_x", "coordinate_y", "direction", "amount", "scroll_count", "item_selector", "script", "user_agent", "max_depth", "keywords", "fuzzy", "cookies", "timeout", "viewport_width", "viewport_height", "reset", "full_page"),
-    )
-
-    // Aligned with iOS AIChatViewModel.swift:5059-5067
-    private fun memoryWriteDefinition(): AgentToolDefinition = AgentToolDefinition(
-        name = "memory_write",
-        description = "Write a memory entry to today's daily log (YYYY-MM-DD.md). Memories persist across all sessions. " +
-            "Each entry is prepended with a timestamp. " +
-            "Save: user preferences, recurring patterns, key facts, project conventions, reusable knowledge. " +
-            "Avoid saving passwords, API keys, tokens, or secrets unless the user explicitly confirms after being warned. " +
-            "Keep entries concise and general-purpose. GLOBAL.md is read-only (user-maintained via Settings).",
-        parameters = mapOf(
-            "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'Save user preference for Python', 'Note today's project context'). Use the same language as the user."),
-            "content" to AgentToolParam("string", "The memory content to write. Use concise Markdown with a short heading (## Topic) and context about what was done/learned."),
-        ),
-        required = listOf("tool_title", "content"),
-        propertyOrdering = listOf("tool_title", "content"),
-    )
-
-    // Aligned with iOS AIChatViewModel.swift:5069-5078
-    private fun memoryGetDefinition(): AgentToolDefinition = AgentToolDefinition(
-        name = "memory_get",
-        description = "Retrieve memories from persistent storage. Supports keyword-based fuzzy search across memory files. " +
-            "Returns matching lines with surrounding context. Use this to recall previous knowledge, user preferences, or past notes.",
-        parameters = mapOf(
-            "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'Recall user preferences', 'Search past notes'). Use the same language as the user."),
-            "scope" to AgentToolParam("string", "Memory scope to search: 'daily' for daily logs only, 'all' for daily logs + GLOBAL.md.", enumValues = listOf("daily", "all")),
-            "keywords" to AgentToolParam("string", "Space-separated keywords for fuzzy matching (e.g. 'python preference' or 'API key setup'). All keywords must appear in a line or its surrounding context for a match. Leave empty to return full memory files."),
-        ),
-        required = listOf("tool_title"),
-        propertyOrdering = listOf("tool_title", "scope", "keywords"),
     )
 }

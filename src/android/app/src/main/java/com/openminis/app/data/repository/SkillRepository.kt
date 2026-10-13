@@ -1231,41 +1231,69 @@ class SkillRepository(private val context: Context) {
 
     // -- Bundled Skills --
 
+    /**
+     * [T-android-tool-surface] Stage every skill under `assets/skills/`.
+     *
+     * Was a single hardcoded skill parsed out of a Kotlin string literal. The
+     * directory form is what makes the documentation tree a real thing rather
+     * than a constant: the `android-api` and `minis-control` references live
+     * there too, and a user (or the agent) can read, copy and edit them like
+     * any other skill instead of them being frozen into the binary.
+     *
+     * Assets are read on the calling thread; the whole set is a few KB and
+     * this runs once from init.
+     */
     private fun installBundledSkills() {
-        val bundledId = "skill-creator"
-        val bundledVersion = "2.0.0"
-        val existing = _skills.value.find { it.id == bundledId }
-
-        // Skip if local version is same or newer
-        if (existing != null && existing.version >= bundledVersion) return
-
-        val parsed = parseSkillMd(SKILL_CREATOR_CONTENT) ?: return
-        if (existing != null) {
-            // Upgrade existing
-            val updated = existing.copy(
-                description = parsed.description,
-                version = bundledVersion,
-                body = parsed.body,
-                updatedAt = System.currentTimeMillis(),
-            )
-            db.execSQL(
-                "UPDATE skills SET description=?, version=?, updated_at=? WHERE id=?",
-                arrayOf<Any>(updated.description, bundledVersion, updated.updatedAt, bundledId)
-            )
-            writeSkillMd(updated)
-            mutateSkills { list -> list.map { if (it.id == bundledId) updated else it } }
-            Log.i(TAG, "Upgraded bundled skill: $bundledId → v$bundledVersion")
-        } else {
-            // Fresh install
-            add(
-                name = parsed.name,
-                description = parsed.description,
-                body = parsed.body,
-                source = ImportSource.BUNDLED,
-            )
-            Log.i(TAG, "Installed bundled skill: $bundledId (v$bundledVersion)")
+        val bundled = readBundledAssets() ?: return
+        for ((dirName, text) in bundled) {
+            val parsed = parseSkillMd(text) ?: continue
+            val existing = _skills.value.find { it.id == dirName }
+            // Skip if the installed copy is same-or-newer. `version` is a
+            // free-form string in the frontmatter; a numeric comparison would
+            // need to survive someone writing "2026.1".
+            if (existing != null && existing.version >= parsed.version) continue
+            if (existing != null) {
+                val updated = existing.copy(
+                    description = parsed.description,
+                    version = parsed.version,
+                    body = parsed.body,
+                    updatedAt = System.currentTimeMillis(),
+                )
+                db.execSQL(
+                    "UPDATE skills SET description=?, version=?, updated_at=? WHERE id=?",
+                    arrayOf<Any>(updated.description, updated.version, updated.updatedAt, dirName)
+                )
+                writeSkillMd(updated)
+                mutateSkills { list -> list.map { if (it.id == dirName) updated else it } }
+                Log.i(TAG, "Upgraded bundled skill: $dirName -> v${updated.version}")
+            } else {
+                add(
+                    name = parsed.name,
+                    description = parsed.description,
+                    body = parsed.body,
+                    source = ImportSource.BUNDLED,
+                )
+                Log.i(TAG, "Installed bundled skill: $dirName (v${parsed.version})")
+            }
         }
     }
+
+    /** `assets/skills/<dir>/SKILL.md` -> text, for every dir that has one. */
+    private fun readBundledAssets(): List<Pair<String, String>>? = runCatching {
+        val skillsRoot = "skills"
+        val dirs = context.assets.list(skillsRoot).orEmpty()
+        dirs.mapNotNull { dir ->
+            val text = runCatching {
+                context.assets.open("$skillsRoot/$dir/SKILL.md").use { it.readBytes().toString(Charsets.UTF_8) }
+            }.getOrNull() ?: return@mapNotNull null
+            dir to text
+        }
+    }.getOrNull()
+
+
+    // [T-android-tool-surface] assets/skills/minis-docs/SKILL.md is the index:
+    // every other bundled doc is listed there by path, so the model opens what
+    // it needs instead of carrying three reference bodies in every request.
 
     // -- Reload --
 
@@ -1680,97 +1708,12 @@ class SkillRepository(private val context: Context) {
 }
 
 // Bundled skill-creator content (matches iOS SkillStore.skillCreatorContent)
-private val SKILL_CREATOR_CONTENT = """
----
-name: skill-creator
-version: 2.0.0
-description: Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends Claude's capabilities with specialized knowledge, workflows, or tool integrations.
----
-
-# Skill Creator
-
-This skill provides guidance for creating effective skills.
-
-## About Skills
-
-Skills are modular, self-contained packages that extend Claude's capabilities by providing
-specialized knowledge, workflows, and tools. Think of them as "onboarding guides" for specific
-domains or tasks—they transform Claude from a general-purpose agent into a specialized agent
-equipped with procedural knowledge that no model can fully possess.
-
-### What Skills Provide
-
-1. Specialized workflows - Multi-step procedures for specific domains
-2. Tool integrations - Instructions for working with specific file formats or APIs
-3. Domain expertise - Company-specific knowledge, schemas, business logic
-4. Bundled resources - Scripts, references, and assets for complex and repetitive tasks
-
-## Core Principles
-
-### Concise is Key
-
-The context window is a public good. Skills share the context window with everything else Claude needs: system prompt, conversation history, other Skills' metadata, and the actual user request.
-
-**Default assumption: Claude is already very smart.** Only add context Claude doesn't already have. Challenge each piece of information: "Does Claude really need this explanation?" and "Does this paragraph justify its token cost?"
-
-Prefer concise examples over verbose explanations.
-
-### Set Appropriate Degrees of Freedom
-
-Match the level of specificity to the task's fragility and variability:
-
-- **High freedom (text-based instructions)**: Use when multiple approaches are valid.
-- **Medium freedom (pseudocode or scripts with parameters)**: Use when a preferred pattern exists.
-- **Low freedom (specific scripts, few parameters)**: Use when operations are fragile, consistency is critical, or a specific sequence must be followed.
-
-### Anatomy of a Skill
-
-Every skill consists of a required SKILL.md file and optional bundled resources:
-
-```
-skill-name/
-├── SKILL.md (required)
-│   ├── YAML frontmatter (name + description required)
-│   └── Markdown instructions
-└── Bundled Resources (optional)
-    ├── scripts/       - Executable code
-    ├── references/    - Documentation loaded as needed
-    └── assets/        - Files used in output (templates, icons, etc.)
-```
-
-#### SKILL.md Frontmatter
-
-- `name` (required): The skill name
-- `description` (required): What the skill does and when to trigger it. Be comprehensive—this is the primary triggering mechanism.
-
-#### SKILL.md Body
-
-Instructions and guidance, loaded after the skill triggers. Keep under 500 lines; split into reference files when approaching this limit.
-
-### Progressive Disclosure
-
-Skills use three loading levels:
-1. **Metadata** - Always in context (~100 words)
-2. **SKILL.md body** - When skill triggers (<5k words)
-3. **Bundled resources** - As needed (unlimited)
-
-## Skill Creation Process
-
-1. **Understand** the skill with concrete examples from the user
-2. **Plan** reusable contents (scripts, references, assets)
-3. **Create** the SKILL.md with proper frontmatter and instructions
-4. **Test** by using the skill on real tasks
-5. **Iterate** based on actual usage
-
-### Writing the SKILL.md
-
-- Use imperative/infinitive form
-- `description` field should include all "when to use" triggers (body is loaded after triggering)
-- Only add context Claude doesn't already have
-- Prefer concise examples over verbose explanations
-- Keep essential workflow in SKILL.md; move detailed reference material to separate files
-
-### What NOT to Include
-
-Do not create extraneous files: README.md, INSTALLATION_GUIDE.md, CHANGELOG.md, etc. The skill should only contain what an AI agent needs to do the job.
-""".trimIndent()
+/**
+ * [T-android-tool-surface] The skill-creator guidance used to live here as a
+ * ~2.5k-character Kotlin string literal: it cost space in the APK and forced
+ * a 1,776-line file to recompile whenever a word of it changed. It now ships
+ * as a real file at assets/skills/skill-creator/SKILL.md, read by the same
+ * installBundledSkills() pass that walks the directory.
+ */
+private const val SKILL_CREATOR_ID = "skill-creator"
+private const val SKILL_CREATOR_VERSION = "2.0.0"

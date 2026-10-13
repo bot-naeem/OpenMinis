@@ -288,36 +288,14 @@ object ExecutionCoordinator {
             mountedSessionIds[sessionId] = fsSessionId
         }
 
-        val env = ExecutionEnvironmentRepository.currentEnvironment.value
-        val startTime = System.currentTimeMillis()
-
-        if (env != ExecutionEnvironment.SANDBOX) {
-            val (rawOutput, exitCode) = when (env) {
-                ExecutionEnvironment.HOST_SHELL -> {
-                    HostShellExecutor.execute(appContext, command, timeout, isRoot = false, lineCallback)
-                }
-                ExecutionEnvironment.ROOT -> {
-                    HostShellExecutor.execute(appContext, command, timeout, isRoot = true, lineCallback)
-                }
-                ExecutionEnvironment.SHIZUKU -> {
-                    val res = com.openminis.app.offload.ShizukuManager.runProcess(
-                        arrayOf("sh", "-c", command),
-                        timeoutMs = timeout
-                    )
-                    Pair(res.combined, res.exitCode)
-                }
-                ExecutionEnvironment.SANDBOX -> Pair("", 0) // Unreachable
-            }
-            val durationMs = System.currentTimeMillis() - startTime
-            val sanitized = TerminalSanitizer.sanitize(rawOutput)
-            val truncated = TerminalSanitizer.truncateIfNeeded(sanitized)
-            val output = if (exitCode != 0 && exitCode != 124) {
-                ShellExitCode.ensureSuffix(truncated, exitCode)
-            } else {
-                truncated
-            }
-            return CommandResult(output = output, exitCode = exitCode, durationMs = durationMs)
-        }
+        // [T-android-sandbox-only] The agent has exactly one execution
+        // environment: the PRoot Alpine sandbox. Privileged host work is no
+        // longer reachable by switching an environment — it goes through the
+        // offload IPC layer (`android-root-cli` / `android-shizuku-cli`), which
+        // every call site gates behind OffloadPermissionManager. That trade is
+        // deliberate: on Android, `su` inside a mount namespace keeps its full
+        // capability set, so a "root inside a sandbox" boundary does not exist
+        // on this kernel. Confinement has to live at the API surface instead.
 
         // [T-android-shell-fresh-process] Step 3: route through the strategy (Sandbox mode).
         // FRESH_PROCESS needs no lease, no pool slot and no mutex — a command
@@ -656,7 +634,6 @@ object ExecutionCoordinator {
             val shell = removeSessionShells(sessionId)
             shell?.stop()
             stopFreshShells(sessionId)
-            HostShellExecutor.cancel()
             Log.i(TAG, "[$sessionId] Shells stopped by user")
         } else {
             // Stop all sessions (legacy/fallback)
@@ -666,7 +643,6 @@ object ExecutionCoordinator {
             ArrayList(freshShells.keys).forEach { stopFreshShells(it) }
             lastInjectedKeys.clear()
             ShellExecutor.destroyCurrent()
-            HostShellExecutor.cancel()
         }
     }
 

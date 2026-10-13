@@ -617,7 +617,6 @@ class MinisApp : Application(), ImageLoaderFactory {
         RootfsManager.getInstance(this)
         ExecutionCoordinator.init(this)
         ExecutionCoordinator.envVarRepository = envVarRepository
-        com.openminis.app.sandbox.ExecutionEnvironmentRepository.init(this)
 
         // Privacy Mode store + redactor wiring. Mirrors iOS
         // EnvVarPrivacyStore.init / EnvVarRedactor static handoff.
@@ -713,6 +712,15 @@ class MinisApp : Application(), ImageLoaderFactory {
         // can register unconditionally; ShizukuManager.init below wires
         // up the binder lifecycle listeners + StateFlow.
         NativeOffloadServer.register("android-shizuku-cli", ShizukuOffloadHandler(this))
+        // [T-android-sandbox-only] android-root-cli — the same privileged
+        // surface reached through `su` instead of the Shizuku binder. It exists
+        // because the ROOT execution environment is gone: `su -c <anything>`
+        // used to be one pref away from shell_execute, and is now reachable
+        // only through the permission-gated `android` tool. Off by default.
+        NativeOffloadServer.register(
+            "android-root-cli",
+            com.openminis.app.sandbox.offload.RootOffloadHandler(this),
+        )
         com.openminis.app.offload.ShizukuManager.init(this)
 
         // T-android-minis-debug-cli: shell-side CLI wrapper around the in-app
@@ -772,12 +780,6 @@ class MinisApp : Application(), ImageLoaderFactory {
         // posts a tap-to-open notification when the app is backgrounded.
         // Mirrors iOS BackgroundKeepAliveManager.postBackgroundTaskNotification.
         backgroundSettingsRepository = BackgroundSettingsRepository(this)
-        SessionActivityTracker.setResidentAssistantEnabled(backgroundSettingsRepository.residentAssistantEnabled.value)
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
-            backgroundSettingsRepository.residentAssistantEnabled.collect { enabled ->
-                SessionActivityTracker.setResidentAssistantEnabled(enabled)
-            }
-        }
         backgroundTaskNotifier = BackgroundTaskNotifier(
             context = this,
             chatRepository = chatRepository,

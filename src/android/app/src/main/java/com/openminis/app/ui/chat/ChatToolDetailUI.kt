@@ -1,5 +1,7 @@
 package com.openminis.app.ui.chat
 
+import com.openminis.app.tools.ToolNames
+
 // [T-android-split-chat] Tool-detail sheet + reveal/editor helpers extracted
 // verbatim from ChatScreen.kt: ToolDetailSheet, extractShellCommand,
 // extractPartialJsonString, chunkToolOutput, initialRevealChunks,
@@ -363,8 +365,8 @@ internal fun ToolDetailSheet(
                 val clipboardManager = LocalClipboardManager.current
                 val actionContext = LocalContext.current
                 var copyDone by remember { mutableStateOf(false) }
-                val isShellTool = block.toolName == "shell_execute"
-                val isBrowserTool = block.toolName == "browser_use"
+                val isShellTool = ToolNames.matches(block.toolName, ToolNames.BASH)
+                val isBrowserTool = ToolNames.matches(block.toolName, ToolNames.BROWSER)
                 val toolArgsForAction = remember(block.toolArgs) {
                     try { org.json.JSONObject(block.toolArgs) } catch (_: Exception) { org.json.JSONObject() }
                 }
@@ -479,12 +481,12 @@ internal fun ToolDetailSheet(
                     .weight(1f)
                     .fillMaxWidth(),
             ) {
-                when (block.toolName) {
+                when (ToolNames.canonical(block.toolName)) {
                     // ── Agent: stacked cards (header · current tool · screenshot · result) ──
                     com.openminis.app.agent.jobs.HelperRunner.TOOL_NAME -> HelperDetailContent(block)
 
                     // ── Shell: black rounded terminal card (mirrors iOS ToolLiveSheet) ──
-                    "shell_execute" -> {
+                    ToolNames.BASH -> {
                         val command = extractShellCommand(toolArgsObj, block)
                         // T141: monitor active only while the tool is still running;
                         // sheet may stay open after the run completes (user reading
@@ -620,7 +622,7 @@ internal fun ToolDetailSheet(
                     // diff body (no inter-line gaps), and a `Edited <path> (detail)`
                     // footer once the tool finishes. minHeight=cardWidth × 3/4 keeps
                     // small diffs from collapsing into a thin stripe.
-                    "file_edit" -> {
+                    ToolNames.EDIT -> {
                         val path = toolArgsObj.optString("path", "")
                             .ifEmpty { extractPartialJsonString("path", block.toolArgs) ?: "" }
                         val fileName = if (path.contains("/")) path.substringAfterLast("/") else path
@@ -805,11 +807,11 @@ internal fun ToolDetailSheet(
                     }
 
                     // ── File Read / File Write: editor-style with title bar (mirrors iOS fileEditorContent) ──
-                    "file_read", "file_write" -> {
+                    ToolNames.READ, ToolNames.WRITE -> {
                         val path = toolArgsObj.optString("path", "")
                             .ifEmpty { extractPartialJsonString("path", block.toolArgs) ?: "" }
                         val fileName = if (path.contains("/")) path.substringAfterLast("/") else path
-                        val displayText = if (block.toolName == "file_write") {
+                        val displayText = if (ToolNames.matches(block.toolName, ToolNames.WRITE)) {
                             toolArgsObj.optString("content", "")
                                 .ifEmpty { extractPartialJsonString("content", block.toolArgs) ?: "" }
                                 .ifEmpty { block.content }
@@ -818,7 +820,7 @@ internal fun ToolDetailSheet(
                         }
                         EditorCard(
                             title = fileName.ifEmpty { "file" },
-                            icon = if (block.toolName == "file_read") Icons.Default.Description
+                            icon = if (ToolNames.matches(block.toolName, ToolNames.READ)) Icons.Default.Description
                                    else Icons.AutoMirrored.Filled.NoteAdd,
                             iconTint = ChatColors.secondaryText,
                             titleColor = ChatColors.primaryText,
@@ -827,13 +829,13 @@ internal fun ToolDetailSheet(
                             bodyColor = ChatColors.primaryText,
                             isStreaming = isLive,
                             scrollState = outputScrollState,
-                            trailingText = if (block.toolName == "file_write" &&
+                            trailingText = if (ToolNames.matches(block.toolName, ToolNames.WRITE) &&
                                 block.content.isNotEmpty() && block.content != displayText) block.content else null,
                         )
                     }
 
                     // ── Browser: action capsule + URL bar + screenshot + result text ──
-                    "browser_use" -> {
+                    ToolNames.BROWSER -> {
                         val action = toolArgsObj.optString("action", "")
                         val argsUrl = toolArgsObj.optString("url", "")
                         // Resolved URL: prefer block.browserURL (actual page URL), fallback to args URL,
@@ -879,7 +881,7 @@ internal fun ToolDetailSheet(
                                     if (blockIdx <= 0) null
                                     else (blockIdx - 1 downTo 0).firstNotNullOfOrNull { i ->
                                         val prev = toolBlocks[i]
-                                        if (prev.toolName == "browser_use" && prev.imageFilePath != null) {
+                                        if (ToolNames.matches(prev.toolName, ToolNames.BROWSER) && prev.imageFilePath != null) {
                                             DisplayBitmapLimits.decodeFileBounded(prev.imageFilePath)
                                         } else null
                                     }
@@ -1026,10 +1028,10 @@ internal fun ToolDetailSheet(
                     }
 
                     // ── Memory: pink editor card (iOS: memoryEditorContent) ──
-                    "memory_write", "memory_get" -> {
+                    ToolNames.MEMORY -> {
                         // memory_write: content comes from tool args.
                         // memory_get: content comes from the tool's result text.
-                        val memContent = if (block.toolName == "memory_write") {
+                        val memContent = if (ToolNames.matches(block.toolName, ToolNames.MEMORY)) {
                             toolArgsObj.optString("content", "")
                                 .ifEmpty { extractPartialJsonString("content", block.toolArgs) ?: "" }
                                 .ifEmpty { block.content }
@@ -1038,7 +1040,7 @@ internal fun ToolDetailSheet(
                         }
                         val keywords = toolArgsObj.optString("keywords", "")
                             .ifEmpty { extractPartialJsonString("keywords", block.toolArgs) ?: "" }
-                        val prefix = if (keywords.isNotEmpty() && block.toolName == "memory_get")
+                        val prefix = if (keywords.isNotEmpty() && ToolNames.matches(block.toolName, ToolNames.MEMORY))
                             "Keywords: $keywords\n\n" else ""
                         EditorCard(
                             title = block.toolName,

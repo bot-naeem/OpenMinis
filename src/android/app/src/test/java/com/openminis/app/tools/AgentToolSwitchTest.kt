@@ -52,23 +52,24 @@ class AgentToolSwitchTest {
             AgentTools.makeAgentTools(browserEnabled = browser, delegateEnabled = delegate)
                 .map { it.name }.toSet()
 
-        // [T-sub-agents-v1] delegate_task + agent_status became the single
-        // subagent_task tool; the switch still governs the whole capability.
+        // [T-sub-agents-v1] delegate_task + agent_status became a single
+        // sub-agent tool, since renamed to `subagent`; the switch governs the
+        // whole capability.
         val all = names(browser = true, delegate = true)
-        assertTrue(all.containsAll(listOf("browser_use", "subagent_task")))
+        assertTrue(all.containsAll(listOf("browser_use", "subagent")))
 
         val noBrowser = names(browser = false, delegate = true)
         assertFalse("browser_use must be absent, not merely refused", "browser_use" in noBrowser)
-        assertTrue("the agents tool is independent", "subagent_task" in noBrowser)
+        assertTrue("the agents tool is independent", "subagent" in noBrowser)
 
         val noAgents = names(browser = true, delegate = false)
-        assertFalse("subagent_task" in noAgents)
+        assertFalse("subagent" in noAgents)
         assertTrue("browser_use is independent", "browser_use" in noAgents)
 
         // Both off: only the core tools remain, and shell/file access survives.
         val neither = names(browser = false, delegate = false)
-        assertTrue("shell_execute" in neither && "file_read" in neither)
-        for (gated in listOf("browser_use", "subagent_task")) {
+        assertTrue("bash" in neither && "read" in neither)
+        for (gated in listOf("browser_use", "subagent")) {
             assertFalse(gated in neither)
         }
     }

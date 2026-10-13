@@ -37,10 +37,11 @@ class SubAgentToolSchemaTest {
     // ── One tool, not two ───────────────────────────────────────────────────
 
     @Test
-    fun `the schema exposes subagent_task and no separate status tool`() {
+    fun `the schema exposes subagent and no separate status tool`() {
         val all = tools().map { it.name }
-        assertTrue("subagent_task must be offered", all.contains("subagent_task"))
+        assertTrue("subagent must be offered", all.contains("subagent"))
         assertFalse("delegate_task was renamed", all.contains("delegate_task"))
+        assertFalse("subagent_task was renamed", all.contains("subagent_task"))
         assertFalse("agent_status is folded in as an action", all.contains("agent_status"))
     }
 
@@ -134,12 +135,12 @@ class SubAgentToolSchemaTest {
 
     @Test
     fun `new blocks are written under the new name only`() {
-        assertEquals("subagent_task", HelperRunner.TOOL_NAME)
+        assertEquals("subagent", HelperRunner.TOOL_NAME)
     }
 
     @Test
     fun `the agents switch still governs a legacy tool name`() {
-        for (n in listOf("subagent_task", "delegate_task", "agent_status")) {
+        for (n in listOf("subagent", "subagent_task", "delegate_task", "agent_status")) {
             assertEquals(
                 "switch must govern $n",
                 AgentToolSwitch.AGENTS,
@@ -214,7 +215,7 @@ class SubAgentToolSchemaTest {
             ),
         )
         val out = HelperRunner.subAgentRosterSection(roster) { if (it == "grp") "Strong Models" else null }
-        assertTrue(out.contains("subagent_task.agent"))
+        assertTrue(out.contains("subagent.agent"))
         assertTrue("an Auto agent invites model_choice", out.contains("Auto — you choose with model_choice"))
         assertTrue("a pinned agent names its group", out.contains("fixed — Strong Models"))
         assertTrue(out.contains("Researcher"))

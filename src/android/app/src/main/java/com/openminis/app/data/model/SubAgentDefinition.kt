@@ -141,7 +141,7 @@ data class SubAgentDefinition(
          * folded in as an `action`, so the model sees ONE tool for delegating
          * and for inspecting or stopping what it delegated.
          */
-        const val TOOL_NAME = "subagent_task"
+        const val TOOL_NAME = com.openminis.app.tools.ToolNames.SUBAGENT
 
         /** The built-in's stored name, deliberately NOT localized. See [name]. */
         const val BUILT_IN_NAME = "General Sub Agent"

@@ -1,5 +1,7 @@
 package com.openminis.app.speech
 
+import com.openminis.app.tools.ToolNames
+
 import org.json.JSONObject
 
 /**
@@ -44,28 +46,31 @@ object ToolSpeech {
         val zh = title?.let { HAN.containsMatchIn(it) } ?: false
         val detail = clip(title)
 
-        return when (name) {
-            "shell_execute" -> {
+        return when (ToolNames.canonical(name)) {
+            ToolNames.BASH -> {
                 val d = detail ?: clip(args?.optString("command")) ?: ""
                 if (zh) "正在执行脚本:$d" else "Executing script: $d"
             }
-            "file_read" -> {
+            ToolNames.READ -> {
                 val d = detail ?: fileName(args?.optString("path"), zh)
                 if (zh) "正在读取文件:$d" else "Reading file: $d"
             }
-            "file_write" -> {
+            ToolNames.WRITE -> {
                 val d = detail ?: fileName(args?.optString("path"), zh)
                 if (zh) "正在写入文件:$d" else "Writing file: $d"
             }
-            "file_edit" -> {
+            ToolNames.EDIT -> {
                 val d = detail ?: fileName(args?.optString("path"), zh)
                 if (zh) "正在编辑文件:$d" else "Editing file: $d"
             }
-            "browser_use" -> {
+            ToolNames.BROWSER -> {
                 val d = detail ?: clip(args?.optString("action")) ?: ""
                 if (zh) "正在操作浏览器:$d" else "Using browser: $d"
             }
             "read_image" -> {
+                // Unreachable via canonical() today (read_image folds into
+                // `read`), kept so a transcript written by an older build that
+                // somehow escapes canonicalisation still says something true.
                 val d = detail ?: fileName(args?.optString("path"), zh)
                 if (zh) "正在读取图片:$d" else "Reading image: $d"
             }

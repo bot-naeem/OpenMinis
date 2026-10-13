@@ -9,7 +9,7 @@ import com.openminis.app.sandbox.PRootKernel
 import org.json.JSONObject
 
 object FileEditTool {
-    const val NAME = "file_edit"
+    const val NAME = ToolNames.EDIT
 
     fun definition(): AgentToolDefinition = AgentToolDefinition(
         name = NAME,
@@ -25,7 +25,7 @@ object FileEditTool {
         propertyOrdering = listOf("tool_title", "path", "old_string", "new_string", "replace_all"),
     )
 
-    fun execute(argsJson: String, sessionId: String, context: Context): ToolExecutionResult {
+    suspend fun execute(argsJson: String, sessionId: String, context: Context): ToolExecutionResult {
         return try {
             val args = JSONObject(argsJson)
             val path = args.optString("path", "")
@@ -36,6 +36,24 @@ object FileEditTool {
 
             if (path.isBlank()) {
                 return ToolExecutionResult("Error: 'path' is required", false, toolTitle = toolTitle)
+            }
+
+            // [T-android-sandbox-only] Same host-side policy as write: the file
+            // tools are no longer confined to the sandbox namespace, so an edit
+            // into a system partition is refused outright.
+            when (FileToolGuard.decide(path)) {
+                FileToolGuard.Decision.PROTECTED ->
+                    return ToolExecutionResult(FileToolGuard.refusalMessage(path), false, toolTitle = toolTitle)
+                FileToolGuard.Decision.NEEDS_PERMISSION ->
+                    if (!FileToolGuard.authorizeWrite(path, NAME, sessionId)) {
+                        return ToolExecutionResult(
+                            "Error: the user declined the edit to $path. Do not retry it in " +
+                                "this conversation.",
+                            false,
+                            toolTitle = toolTitle,
+                        )
+                    }
+                FileToolGuard.Decision.ALLOW -> Unit
             }
             if (oldString.isEmpty()) {
                 return ToolExecutionResult("Error: 'old_string' is required and cannot be empty", false, toolTitle = toolTitle)

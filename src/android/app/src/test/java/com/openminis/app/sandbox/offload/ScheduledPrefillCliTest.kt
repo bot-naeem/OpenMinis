@@ -39,7 +39,7 @@ class ScheduledPrefillCliTest {
     @Test
     fun `--shell takes the command verbatim and titles the card with the label`() {
         val call = parse("--shell", "curl -s 'wttr.in/Shanghai?format=3'")!!
-        assertEquals("shell_execute", call.toolName)
+        assertEquals("bash", call.toolName)
         assertEquals("curl -s 'wttr.in/Shanghai?format=3'", call.args().getString("command"))
         assertEquals("Weather", call.args().getString("tool_title"))
         assertFalse("no timeout unless asked for", call.args().has("timeout"))
@@ -65,7 +65,7 @@ class ScheduledPrefillCliTest {
     @Test
     fun `the general form accepts shell arguments as JSON`() {
         val call = parse("--tool", "shell", "--tool-args", """{"command":"make","timeout":1200}""")!!
-        assertEquals("shell_execute", call.toolName)
+        assertEquals("bash", call.toolName)
         assertEquals(1200, call.args().getInt("timeout"))
         // --tool defaults to shell, as on iOS.
         assertEquals("make", parse("--tool-args", """{"command":"make"}""")!!.args().getString("command"))

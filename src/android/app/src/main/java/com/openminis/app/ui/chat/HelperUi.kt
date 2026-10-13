@@ -1,5 +1,7 @@
 package com.openminis.app.ui.chat
 
+import com.openminis.app.tools.ToolNames
+
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -488,7 +490,7 @@ internal fun helperElapsedLabel(s: Int): String = if (s >= 60) "${s / 60}m ${s %
 
 /** Icon for a child's tool name — the same vocabulary the parent's blocks use. */
 internal fun helperToolIcon(name: String?): ImageVector = when (name) {
-    null, "", "subagent_task", "delegate_task", "agent_status" -> Icons.Default.Groups
+    null, "", ToolNames.SUBAGENT -> Icons.Default.Groups
     else -> toolIconFor(name)
 }
 

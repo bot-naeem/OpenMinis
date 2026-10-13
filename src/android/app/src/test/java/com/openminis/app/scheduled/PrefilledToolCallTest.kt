@@ -85,7 +85,7 @@ class PrefilledToolCallTest {
             JSONObject().put("command", "ls").put("tool_title", "List"),
             title = "ignored",
         )
-        assertEquals("shell_execute", call.toolName)
+        assertEquals("bash", call.toolName)
         assertEquals("List", call.args().getString("tool_title"))
     }
 
@@ -93,8 +93,8 @@ class PrefilledToolCallTest {
     fun `only supported tools with valid arguments pass validation`() {
         assertNull(PrefilledToolCall.shell("ls").validationError())
         assertNotNull(PrefilledToolCall("browser_use", "{}").validationError())
-        assertNotNull(PrefilledToolCall.of("shell_execute", JSONObject()).validationError())
-        assertNotNull(PrefilledToolCall("shell_execute", "not json").validationError())
+        assertNotNull(PrefilledToolCall.of("bash", JSONObject()).validationError())
+        assertNotNull(PrefilledToolCall("bash", "not json").validationError())
         assertTrue(
             PrefilledToolCall("file_read", "{}").validationError()!!.contains("not supported yet"),
         )
@@ -109,8 +109,8 @@ class PrefilledToolCallTest {
 
     @Test
     fun `the envelope names the prefilled tool and parses it back`() {
-        val marker = ScheduledTaskMarker("T1", "Weather", 100L, "Summarise", prefilledTool = "shell_execute")
-        assertTrue(marker.xml.contains(" prefilled=\"shell_execute\""))
+        val marker = ScheduledTaskMarker("T1", "Weather", 100L, "Summarise", prefilledTool = "bash")
+        assertTrue(marker.xml.contains(" prefilled=\"bash\""))
         assertEquals(marker, ScheduledTaskMarker.parse(marker.xml))
     }
 
@@ -119,12 +119,12 @@ class PrefilledToolCallTest {
         // Word-for-word the iOS ScheduledPresetToolCall.envelopeNote, so both
         // platforms tell the model the same thing: the call already ran, work
         // from its output, re-run only on failure.
-        val iosNote = "[This task's first step already ran for you: shell_execute — its call and output follow. " +
+        val iosNote = "[This task's first step already ran for you: bash — its call and output follow. " +
             "Work from that output; re-run only if it failed.]"
-        assertEquals(iosNote, ScheduledTaskMarker.prefillNote("shell_execute"))
-        val marker = ScheduledTaskMarker("T1", "Weather", 100L, "Summarise", prefilledTool = "shell_execute")
+        assertEquals(iosNote, ScheduledTaskMarker.prefillNote("bash"))
+        val marker = ScheduledTaskMarker("T1", "Weather", 100L, "Summarise", prefilledTool = "bash")
         assertEquals(
-            "<scheduled_task id=\"T1\" label=\"Weather\" next=\"100\" prefilled=\"shell_execute\">\n" +
+            "<scheduled_task id=\"T1\" label=\"Weather\" next=\"100\" prefilled=\"bash\">\n" +
                 iosNote + "\nSummarise\n</scheduled_task>",
             marker.xml,
         )
@@ -135,7 +135,7 @@ class PrefilledToolCallTest {
 
     @Test
     fun `a note-like line is only stripped from a prefilled envelope`() {
-        val note = ScheduledTaskMarker.prefillNote("shell_execute")
+        val note = ScheduledTaskMarker.prefillNote("bash")
         val typed = "<scheduled_task id=\"T1\" label=\"L\">\n$note\nhello\n</scheduled_task>"
         assertEquals("$note\nhello", ScheduledTaskMarker.parse(typed)!!.prompt)
     }
@@ -151,15 +151,15 @@ class PrefilledToolCallTest {
 
     @Test
     fun `the scripted turn streams exactly what a tool-only model turn would`() {
-        val turn = ScriptedToolTurn.from(listOf(PrefilledToolCall.shell("ls", "L")), setOf("shell_execute"))!!
+        val turn = ScriptedToolTurn.from(listOf(PrefilledToolCall.shell("ls", "L")), setOf("bash"))!!
         val chunks = turn.asStreamChunks()
         val id = turn.calls.single().id
         assertEquals(4, chunks.size)
         assertEquals(LLMStreamChunk.Started, chunks[0])
-        assertEquals(LLMStreamChunk.ToolUseStart(id, "shell_execute"), chunks[1])
+        assertEquals(LLMStreamChunk.ToolUseStart(id, "bash"), chunks[1])
         val complete = chunks[2] as LLMStreamChunk.ToolCallComplete
         assertEquals(id, complete.id)
-        assertEquals("shell_execute", complete.name)
+        assertEquals("bash", complete.name)
         assertEquals("ls", complete.args.getString("command"))
         assertNull(complete.thoughtSignature)
         assertEquals(LLMStreamChunk.Finished("tool_use"), chunks[3])
@@ -170,14 +170,14 @@ class PrefilledToolCallTest {
     @Test
     fun `a tool the session does not offer falls back to the model deciding`() {
         assertNull(ScriptedToolTurn.from(listOf(PrefilledToolCall.shell("ls")), setOf("file_read")))
-        assertNull(ScriptedToolTurn.from(emptyList(), setOf("shell_execute")))
+        assertNull(ScriptedToolTurn.from(emptyList(), setOf("bash")))
     }
 
     @Test
     fun `invalid calls are dropped from the scripted turn`() {
         val turn = ScriptedToolTurn.from(
-            listOf(PrefilledToolCall.shell("ls"), PrefilledToolCall("shell_execute", "{}")),
-            setOf("shell_execute"),
+            listOf(PrefilledToolCall.shell("ls"), PrefilledToolCall("bash", "{}")),
+            setOf("bash"),
         )!!
         assertEquals(1, turn.calls.size)
     }
@@ -198,8 +198,8 @@ class PrefilledToolCallTest {
     @Test
     fun `each firing gets fresh ids`() {
         val prefill = listOf(PrefilledToolCall.shell("ls"))
-        val a = ScriptedToolTurn.from(prefill, setOf("shell_execute"))!!.calls.single().id
-        val b = ScriptedToolTurn.from(prefill, setOf("shell_execute"))!!.calls.single().id
+        val a = ScriptedToolTurn.from(prefill, setOf("bash"))!!.calls.single().id
+        val b = ScriptedToolTurn.from(prefill, setOf("bash"))!!.calls.single().id
         assertTrue(a != b)
     }
 }

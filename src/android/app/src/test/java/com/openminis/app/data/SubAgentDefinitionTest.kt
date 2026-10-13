@@ -226,9 +226,9 @@ class SubAgentDefinitionTest {
     // ── The wire name ───────────────────────────────────────────────────────
 
     @Test
-    fun `the tool wire name is subagent_task`() {
-        // Renamed from delegate_task; agent_status folded in as an action.
-        assertEquals("subagent_task", SubAgentDefinition.TOOL_NAME)
+    fun `the tool wire name is subagent`() {
+        // delegate_task -> subagent_task -> subagent; agent_status folded in as an action.
+        assertEquals("subagent", SubAgentDefinition.TOOL_NAME)
     }
 }
 

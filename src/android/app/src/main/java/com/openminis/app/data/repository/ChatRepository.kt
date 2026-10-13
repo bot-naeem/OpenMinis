@@ -1,5 +1,7 @@
 package com.openminis.app.data.repository
 
+import com.openminis.app.tools.ToolNames
+
 import android.database.sqlite.SQLiteBlobTooBigException
 import com.openminis.app.data.db.ChatDao
 import com.openminis.app.data.db.ChatSessionEntity
@@ -1033,19 +1035,19 @@ class ChatRepository(internal val dao: ChatDao) {
             if (title != null) return cap(cleanPreview(title))
 
             // 2. per-tool key argument
-            when (toolName) {
-                "shell_execute" -> str("command")?.let { return cap(cleanPreview("$ $it")) }
-                "file_read" -> str("path")?.let { return cap(cleanPreview("Reading $it")) }
-                "file_write" -> str("path")?.let { return cap(cleanPreview("Writing $it")) }
-                "file_edit" -> str("path")?.let { return cap(cleanPreview("Editing $it")) }
-                "browser_use" -> {
+            when (ToolNames.canonical(toolName)) {
+                ToolNames.BASH -> str("command")?.let { return cap(cleanPreview("$ $it")) }
+                ToolNames.READ -> str("path")?.let { return cap(cleanPreview("Reading $it")) }
+                ToolNames.WRITE -> str("path")?.let { return cap(cleanPreview("Writing $it")) }
+                ToolNames.EDIT -> str("path")?.let { return cap(cleanPreview("Editing $it")) }
+                ToolNames.BROWSER -> {
                     val action = str("action") ?: "browse"
                     val url = str("url")
                     return if (url != null) cap(cleanPreview("$action $url"))
                     else cap(cleanPreview("browser_use $action"))
                 }
-                "memory_write" -> str("content")?.let { return cap(cleanPreview("memory_write: $it")) }
-                "memory_get" -> {
+                ToolNames.MEMORY -> str("content")?.let { return cap(cleanPreview("memory_write: $it")) }
+                ToolNames.MEMORY -> {
                     val arr = input.optJSONArray("keywords")
                     if (arr != null && arr.length() > 0) {
                         val joined = buildString {

@@ -101,8 +101,10 @@ class ToolSpeechTest {
             "Using browser: click login",
             ToolSpeech.announcement("browser_use", """{"action":"click login"}""", null),
         )
+        // read_image folds into `read`, so canonical() now lands on the
+        // file-tool phrasing rather than a separate image one.
         assertEquals(
-            "Reading image: shot.png",
+            "Reading file: shot.png",
             ToolSpeech.announcement("read_image", """{"path":"/tmp/shot.png"}""", null),
         )
     }

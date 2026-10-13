@@ -1,5 +1,7 @@
 package com.openminis.app.ui.chat
 
+import com.openminis.app.tools.ToolNames
+
 import com.openminis.app.R
 
 import androidx.compose.material.icons.Icons
@@ -53,31 +55,29 @@ internal fun formatStepDuration(seconds: Long, stillRunning: Boolean): String {
 }
 
 // Helper: tool accent color
-internal fun toolAccentColor(toolName: String): Color = when (toolName) {
-    "shell_execute" -> Color(0xFF34C759)
-    "file_read" -> Color(0xFF32ADE6)
-    "file_write" -> Color(0xFF007AFF)
-    "file_edit" -> Color(0xFFFF9500)
-    "browser_use" -> Color(0xFF007AFF)
-    "read_image" -> Color(0xFFAF52DE)
-    "memory_write", "memory_get" -> Color(0xFFFF2D55)
+internal fun toolAccentColor(toolName: String): Color = when (ToolNames.canonical(toolName)) {
+    ToolNames.BASH -> Color(0xFF34C759)
+    ToolNames.READ -> Color(0xFF32ADE6)
+    ToolNames.WRITE -> Color(0xFF007AFF)
+    ToolNames.EDIT -> Color(0xFFFF9500)
+    ToolNames.BROWSER -> Color(0xFF007AFF)
+    ToolNames.MEMORY -> Color(0xFFFF2D55)
     "web_search" -> Color(0xFF32ADE6)    // iOS: .cyan for search
     // [T-sub-agents-v1] Current name + the pre-rename one still in shipped transcripts.
-    "subagent_task", "delegate_task", "agent_status" -> HelperAccentStatic  // iOS: HelperAccent.color (electric violet)
+    ToolNames.SUBAGENT -> HelperAccentStatic  // iOS: HelperAccent.color (electric violet)
     else -> Color(0xFF8E8E93)
 }
 
 // Helper: tool icon (iOS: distinct SF Symbols per tool type)
-internal fun toolIconFor(toolName: String) = when (toolName) {
-    "shell_execute" -> Icons.Default.Terminal
-    "file_read" -> Icons.Default.Description         // iOS: doc.text
-    "file_write" -> Icons.AutoMirrored.Filled.NoteAdd   // iOS: doc.text.fill (filled variant)
-    "file_edit" -> Icons.Default.EditNote             // iOS: square.and.pencil
-    "browser_use" -> Icons.Default.Language            // iOS: globe
-    "read_image" -> Icons.Default.Image                // iOS: photo
-    "memory_write", "memory_get" -> Icons.Default.Psychology // iOS: brain.head.profile
+internal fun toolIconFor(toolName: String) = when (ToolNames.canonical(toolName)) {
+    ToolNames.BASH -> Icons.Default.Terminal
+    ToolNames.READ -> Icons.Default.Description         // iOS: doc.text
+    ToolNames.WRITE -> Icons.AutoMirrored.Filled.NoteAdd   // iOS: doc.text.fill (filled variant)
+    ToolNames.EDIT -> Icons.Default.EditNote             // iOS: square.and.pencil
+    ToolNames.BROWSER -> Icons.Default.Language            // iOS: globe
+    ToolNames.MEMORY -> Icons.Default.Psychology // iOS: brain.head.profile
     "web_search" -> Icons.Default.Search               // iOS: magnifyingglass
-    "subagent_task", "delegate_task", "agent_status" -> Icons.Default.Groups  // iOS: person.2.wave.2
+    ToolNames.SUBAGENT -> Icons.Default.Groups  // iOS: person.2.wave.2
     else -> Icons.Default.Build
 }
 
@@ -88,32 +88,30 @@ internal fun toolIconFor(toolName: String) = when (toolName) {
 // resources — but it lives HERE, beside the Compose map, so the two are edited
 // together and cannot silently diverge. Adding a tool means adding it to both.
 @androidx.annotation.DrawableRes
-internal fun toolIconResFor(toolName: String?): Int = when (toolName) {
-    "shell_execute" -> R.drawable.ic_tool_terminal
-    "file_read" -> R.drawable.ic_tool_description
-    "file_write" -> R.drawable.ic_tool_note_add
-    "file_edit" -> R.drawable.ic_tool_edit_note
-    "browser_use" -> R.drawable.ic_tool_globe
-    "read_image" -> R.drawable.ic_tool_image
-    "memory_write", "memory_get" -> R.drawable.ic_tool_psychology
+internal fun toolIconResFor(toolName: String?): Int = when (ToolNames.canonical(toolName ?: "")) {
+    ToolNames.BASH -> R.drawable.ic_tool_terminal
+    ToolNames.READ -> R.drawable.ic_tool_description
+    ToolNames.WRITE -> R.drawable.ic_tool_note_add
+    ToolNames.EDIT -> R.drawable.ic_tool_edit_note
+    ToolNames.BROWSER -> R.drawable.ic_tool_globe
+    ToolNames.MEMORY -> R.drawable.ic_tool_psychology
     "web_search" -> R.drawable.ic_tool_search
-    "subagent_task", "delegate_task", "agent_status" -> R.drawable.ic_tool_groups
+    ToolNames.SUBAGENT -> R.drawable.ic_tool_groups
     else -> R.drawable.ic_tool_build
 }
 
 // [T-android-overlay-two-row] View-layer twin of [toolAccentColor]. Same
 // literals, as a packed ARGB Int rather than a Compose Color.
 @androidx.annotation.ColorInt
-internal fun toolAccentColorInt(toolName: String?): Int = when (toolName) {
-    "shell_execute" -> 0xFF34C759.toInt()
-    "file_read" -> 0xFF32ADE6.toInt()
-    "file_write" -> 0xFF007AFF.toInt()
-    "file_edit" -> 0xFFFF9500.toInt()
-    "browser_use" -> 0xFF007AFF.toInt()
-    "read_image" -> 0xFFAF52DE.toInt()
-    "memory_write", "memory_get" -> 0xFFFF2D55.toInt()
+internal fun toolAccentColorInt(toolName: String?): Int = when (ToolNames.canonical(toolName ?: "")) {
+    ToolNames.BASH -> 0xFF34C759.toInt()
+    ToolNames.READ -> 0xFF32ADE6.toInt()
+    ToolNames.WRITE -> 0xFF007AFF.toInt()
+    ToolNames.EDIT -> 0xFFFF9500.toInt()
+    ToolNames.BROWSER -> 0xFF007AFF.toInt()
+    ToolNames.MEMORY -> 0xFFFF2D55.toInt()
     "web_search" -> 0xFF32ADE6.toInt()
-    "subagent_task", "delegate_task", "agent_status" -> 0xFFAF52DE.toInt()
+    ToolNames.SUBAGENT -> 0xFFAF52DE.toInt()
     else -> 0xFF8E8E93.toInt()
 }
 
@@ -126,35 +124,33 @@ internal fun toolAccentColorInt(toolName: String?): Int = when (toolName) {
  * hoisting that private member, because ChatViewModel is a very large file that
  * several sessions edit concurrently; the vocabulary here is small and stable.
  */
-internal fun friendlyToolTitleFor(toolName: String?): String = when (toolName) {
+internal fun friendlyToolTitleFor(toolName: String?): String = when (ToolNames.canonical(toolName ?: "")) {
     null, "" -> "Minis"
-    "shell_execute" -> "Execute Shell"
-    "file_read" -> "Read File"
-    "file_write" -> "Write File"
-    "file_edit" -> "Edit File"
-    "browser_use" -> "Browse Web"
-    "read_image" -> "Read Image"
-    "memory_write" -> "Write Memory"
-    "memory_get" -> "Read Memory"
+    ToolNames.BASH -> "Execute Shell"
+    ToolNames.READ -> "Read File"
+    ToolNames.WRITE -> "Write File"
+    ToolNames.EDIT -> "Edit File"
+    ToolNames.BROWSER -> "Browse Web"
+    ToolNames.MEMORY -> "Write Memory"
+    ToolNames.MEMORY -> "Read Memory"
     "web_search" -> "Search Web"
-    else -> toolName
+    else -> toolName.orEmpty()
         .split('_')
         .filter { it.isNotEmpty() }
         .joinToString(" ") { it.replaceFirstChar { ch -> ch.uppercase() } }
 }
 
 // Helper: tool display name for "Minis is using X"
-internal fun toolDisplayName(toolName: String): String = when (toolName) {
-    "shell_execute" -> "terminal"
-    "file_read" -> "file reader"
-    "file_write" -> "file writer"
-    "file_edit" -> "file editor"
-    "browser_use" -> "browser"
-    "read_image" -> "image viewer"
-    "memory_write" -> "memory"
-    "memory_get" -> "memory"
+internal fun toolDisplayName(toolName: String): String = when (ToolNames.canonical(toolName)) {
+    ToolNames.BASH -> "terminal"
+    ToolNames.READ -> "file reader"
+    ToolNames.WRITE -> "file writer"
+    ToolNames.EDIT -> "file editor"
+    ToolNames.BROWSER -> "browser"
+    ToolNames.MEMORY -> "memory"
+    ToolNames.MEMORY -> "memory"
     "web_search" -> "search"
-    "subagent_task", "delegate_task", "agent_status" -> "agent"
+    ToolNames.SUBAGENT -> "agent"
     else -> toolName
 }
 
@@ -162,16 +158,15 @@ internal fun toolDisplayName(toolName: String): String = when (toolName) {
  * Full "Minis is …" label shown in the tool detail sheet's bottom bar.
  * Mirrors iOS ToolLiveSheet.toolTitle so the wording matches per tool.
  */
-internal fun toolTitleLabel(toolName: String): String = when (toolName) {
-    "shell_execute" -> "Minis is using Shell"
-    "file_read" -> "Minis is reading File"
-    "file_write" -> "Minis is using Editor"
-    "file_edit" -> "Minis is editing File"
-    "browser_use" -> "Minis is using Browser"
-    "read_image" -> "Minis is reading Image"
-    "memory_write", "memory_get" -> "Minis is using Memory"
+internal fun toolTitleLabel(toolName: String): String = when (ToolNames.canonical(toolName)) {
+    ToolNames.BASH -> "Minis is using Shell"
+    ToolNames.READ -> "Minis is reading File"
+    ToolNames.WRITE -> "Minis is using Editor"
+    ToolNames.EDIT -> "Minis is editing File"
+    ToolNames.BROWSER -> "Minis is using Browser"
+    ToolNames.MEMORY -> "Minis is using Memory"
     "web_search" -> "Minis is using Search"
-    "subagent_task", "delegate_task", "agent_status" -> "Minis is using an Agent"
+    ToolNames.SUBAGENT -> "Minis is using an Agent"
     else -> "Minis is using ${toolDisplayName(toolName)}"
 }
 

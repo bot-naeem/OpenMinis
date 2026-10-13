@@ -52,7 +52,6 @@ import com.openminis.app.ui.sandbox.RootfsManagementScreen
 import com.openminis.app.ui.settings.EnvironmentVariablesScreen
 import com.openminis.app.ui.settings.AppearanceScreen
 import com.openminis.app.ui.settings.SettingsScreen
-import com.openminis.app.ui.settings.SystemPermissionsScreen
 import com.openminis.app.ui.settings.SessionStorageDetailScreen
 import com.openminis.app.ui.settings.SkillDetailScreen
 import com.openminis.app.ui.settings.StorageManagementScreen
@@ -173,7 +172,6 @@ object Routes {
     const val SUB_AGENT_DETAIL = "sub_agent/{agentId}"
     /** [T-tools-granular-switches] Settings > Agent Runtime > Tools. */
     const val AGENT_TOOLS = "agent_tools"
-    const val EXECUTION_ENVIRONMENT = "execution_environment"
     /** [T-mcp-integration-android] MCP Integrations management screen. */
     const val MCP = "mcp"
     /** [T-soul-md] SOUL.md editor. */
@@ -187,7 +185,6 @@ object Routes {
      */
     const val SHIZUKU = "shizuku"
     /** T323: System Permissions (Accessibility service status, etc.). */
-    const val SYSTEM_PERMISSIONS = "system_permissions"
     const val USAGE_STATS = "usage_stats"
     const val LOGS = "logs"
     const val LOG_DETAIL = "log_detail/{fileName}"
@@ -622,7 +619,6 @@ fun AppNavigation(
                 onMemoryClick = { navController.safeNavigate(Routes.MEMORY) },
                 onAgentsClick = { navController.safeNavigate(Routes.AGENTS) },
                 onAgentToolsClick = { navController.safeNavigate(Routes.AGENT_TOOLS) },
-                onExecutionEnvironmentClick = { navController.safeNavigate(Routes.EXECUTION_ENVIRONMENT) },
                 onMcpClick = { navController.safeNavigate(Routes.MCP) },
                 onSoulClick = { navController.safeNavigate(Routes.SOUL) },
                 onPermissionsClick = { navController.safeNavigate(Routes.PERMISSIONS) },
@@ -1405,12 +1401,6 @@ fun AppNavigation(
             )
         }
 
-        composable(Routes.SYSTEM_PERMISSIONS) {
-            SystemPermissionsScreen(
-                onBack = { navController.safePopBackStack() },
-            )
-        }
-
         composable(Routes.USAGE_STATS) {
             UsageStatsScreen(
                 chatDao = chatRepository.dao,
@@ -1468,12 +1458,6 @@ fun AppNavigation(
 
         composable(Routes.AGENT_TOOLS) {
             com.openminis.app.ui.settings.AgentToolsSettingsScreen(
-                onBack = { navController.safePopBackStack() },
-            )
-        }
-
-        composable(Routes.EXECUTION_ENVIRONMENT) {
-            com.openminis.app.ui.settings.ExecutionEnvironmentScreen(
                 onBack = { navController.safePopBackStack() },
             )
         }

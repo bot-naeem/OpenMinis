@@ -36,6 +36,25 @@ object ProductionSources {
         return null
     }
 
+    /**
+     * [T-android-tool-surface] Read a bundled skill document.
+     *
+     * The CLI reference used to be asserted against the system prompt's source
+     * text. It now lives in `assets/skills/`, so the drift guards follow it
+     * there rather than being deleted.
+     */
+    fun readSkill(doc: String): String {
+        var dir: File? = File("").absoluteFile
+        while (dir != null) {
+            for (candidate in listOf("app/src/main/assets/skills/$doc", "src/main/assets/skills/$doc")) {
+                val f = File(dir, candidate)
+                if (f.isFile) return f.readText()
+            }
+            dir = dir.parentFile
+        }
+        error("bundled skill not found: $doc")
+    }
+
     /** Read one production file by its path relative to `com/openminis/app`. */
     fun read(relPath: String): String {
         val root = mainRoot() ?: error("production source root not found from ${File("").absolutePath}")

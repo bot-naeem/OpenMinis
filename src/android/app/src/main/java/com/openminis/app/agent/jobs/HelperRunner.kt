@@ -93,8 +93,13 @@ object HelperRunner {
     const val LEGACY_STATUS_TOOL_NAME = "agent_status"
 
     /** True for the current name or either name a shipped build wrote. */
+    /**
+     * [T-android-tool-surface] Canonical-aware: ToolNames.canonical() folds
+     * subagent_task/delegate_task/agent_status into `subagent`, so a block
+     * written by any shipped build still identifies as a delegation.
+     */
     fun isSubAgentToolName(name: String?): Boolean =
-        name == TOOL_NAME || name == LEGACY_TOOL_NAME || name == LEGACY_STATUS_TOOL_NAME
+        name != null && com.openminis.app.tools.ToolNames.matches(name, TOOL_NAME)
 
     // Limits (design §4.3) — enforced in code, not prompt.
     /**
@@ -371,7 +376,7 @@ object HelperRunner {
     /** The parent-tier system-prompt bullet (byte-identical to iOS), or "" when
      *  the tool is not offered (helper vm, or Settings › Agents off). */
     fun systemPromptBullet(enabled: Boolean): String = if (!enabled) "" else
-        "- subagent_task: Delegate a self-contained task to a sub agent that runs its own tool loop in an isolated hidden session, and inspect or stop the ones you started. Full contract in the tool schema. Two things it does not say: the `<agent_callback>` result and progress messages are written by the system, not typed by the user; and while a sub agent runs the user sees it in the tool bar and can watch or stop it.\n"
+        "- $TOOL_NAME: Delegate a self-contained task to a sub agent that runs its own tool loop in an isolated hidden session, and inspect or stop the ones you started. Full contract in the tool schema. Two things it does not say: the `<agent_callback>` result and progress messages are written by the system, not typed by the user; and while a sub agent runs the user sees it in the tool bar and can watch or stop it.\n"
 
     // ── Payloads (block content + tool_result JSON) ─────────────────────
 

@@ -1,5 +1,6 @@
 package com.openminis.app.ui.chat
 
+import com.openminis.app.tools.ToolNames
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -468,12 +469,13 @@ class ChatViewModel(
          * [T-preflight-empty-string-allowed]
          */
         private val PREFLIGHT_EMPTY_STRING_ALLOWED_FIELDS: Map<String, Set<String>> = mapOf(
-            "file_edit" to setOf("new_string"),
+            ToolNames.EDIT to setOf("new_string"),
         )
 
         /** True when "" is a legal value for this exact (tool, field) pair. */
         internal fun preflightEmptyStringAllowed(tool: String, field: String): Boolean =
-            PREFLIGHT_EMPTY_STRING_ALLOWED_FIELDS[tool]?.contains(field) == true
+            PREFLIGHT_EMPTY_STRING_ALLOWED_FIELDS[ToolNames.canonical(tool)]
+                ?.contains(field) == true
 
         /**
          * Reject tool calls that have empty args or are missing required fields
@@ -2618,7 +2620,13 @@ class ChatViewModel(
         for (msg in deletedMessages) {
             for (block in msg.toolBlocks) {
                 if (block.kind != "tool_use") continue
-                if (block.toolName != "memory_write") continue
+                if (!ToolNames.matches(block.toolName, ToolNames.MEMORY)) continue
+                // [T-android-tool-surface] memory_write and memory_get now share one
+                // tool name; only a block that carries `content` was a write.
+                val wasWrite = runCatching {
+                    org.json.JSONObject(block.toolArgs).optString("content", "").isNotEmpty()
+                }.getOrDefault(false)
+                if (!wasWrite) continue
                 val content = try {
                     JSONObject(block.toolArgs).optString("content", "")
                 } catch (_: Exception) { "" }
@@ -10264,7 +10272,7 @@ class ChatViewModel(
                         candidates.add(OffloadCandidate(msgIdx, partIdx, tokens, bytes, part.id, part.name))
                     }
                     is AgentContentPart.ToolUse -> {
-                        if (part.name != "file_write" && part.name != "file_edit") continue
+                        if (!ToolNames.matches(part.name, ToolNames.WRITE) && !ToolNames.matches(part.name, ToolNames.EDIT)) continue
                         val content = part.input.optString("content", "")
 
                         // [T-offload-toolinput-guards GH#374] The two guards the
@@ -10346,7 +10354,7 @@ class ChatViewModel(
                     // bytes are on disk at the path in file_read's own header.
                     // Re-stub against THAT path instead of writing a byte-for-
                     // byte duplicate under a new name.
-                    val readbackPath = if (part.name == "file_read") {
+                    val readbackPath = if (ToolNames.matches(part.name, ToolNames.READ)) {
                         ContextOffload.offloadReadbackPath(part.content)
                     } else {
                         null
@@ -11592,7 +11600,7 @@ class ChatViewModel(
                             // gate eventually opens — or ToolCallComplete force-flushes —
                             // the latest accumulated args are pushed.
                             val toolName = prev.toolName
-                            val isHeavyFileTool = toolName == "file_write" || toolName == "file_edit"
+                            val isHeavyFileTool = ToolNames.matches(toolName, ToolNames.WRITE) || ToolNames.matches(toolName, ToolNames.EDIT)
                             val gateMs = if (isHeavyFileTool) 1_000L else 200L
                             val nowMs = System.currentTimeMillis()
                             val lastTs = if (isHeavyFileTool) lastFileToolInputMs else lastOtherToolInputMs
@@ -12546,7 +12554,7 @@ class ChatViewModel(
                         // partial artifact is silent corruption of user data and is worse
                         // than no write at all; read-only and shell tools keep the
                         // repair-and-run behaviour. Mirrors iOS ConcurrentTools.
-                        if (truncationRepairTag != null && (name == "file_write" || name == "file_edit")) {
+                        if (truncationRepairTag != null && (ToolNames.matches(name, ToolNames.WRITE) || ToolNames.matches(name, ToolNames.EDIT))) {
                             val path = args.optString("path", "").ifBlank { args.optString("file_path", "") }
                             AppLogger.warning(
                                 "ToolPreflight",
@@ -12726,7 +12734,7 @@ class ChatViewModel(
                             // dedicated branch (AIChatViewModel.swift:5229) and avoids
                             // this; mirror that intent by gating the trim to shell_execute.
                             val existingContent = allToolBlocks[blockIdx].content
-                            val resultContent = if (name == "shell_execute") {
+                            val resultContent = if (ToolNames.matches(name, ToolNames.BASH)) {
                                 result.output.lines().takeLast(80).joinToString("\n")
                             } else {
                                 result.output
@@ -13080,15 +13088,32 @@ class ChatViewModel(
         // bridge, which is now where checkPermission runs.
         val toolTitle = try { JSONObject(argsJson).optString("tool_title", name) } catch (_: Exception) { name }
 
-        return when (name) {
+        // [T-android-tool-surface] Everything below dispatches on the canonical
+        // name, so a transcript written before the rename (which still carries
+        // file_read, shell_execute, memory_write, ...) lands on the same arm.
+        return when (ToolNames.canonical(name)) {
             FileReadTool.NAME -> {
-                val result = FileReadTool.execute(argsJson, fsSessionId, context)
+                // [T-android-tool-surface] read_image folded into read: same
+                // `path` argument either way, so the handler picks by what the
+                // file actually is. Images go through executeReadImageTool,
+                // which carries the Vision-Group routing (GH#182).
+                val target = runCatching {
+                    JSONObject(argsJson).optString("path", "")
+                }.getOrDefault("")
+                val result = if (target.isNotEmpty() && ReadImageTool.looksLikeImage(target)) {
+                    // T178: pass sessionId + context so the image path routes
+                    // through resolveSessionHostPath like read/write/edit do —
+                    // without these it consults the global last-writer-wins
+                    // bindMounts map and could surface another session's files.
+                    executeReadImageTool(argsJson)
+                } else {
+                    FileReadTool.execute(argsJson, fsSessionId, context)
+                }
                 // Record skill usage when SKILL.md under /var/minis/skills/<id>/ is read.
                 if (result.success) {
                     runCatching {
-                        val readPath = JSONObject(argsJson).optString("path", "")
-                        if (readPath.isNotEmpty()) {
-                            skillRepository?.skillIdFromPath(readPath)?.let { sid ->
+                        if (target.isNotEmpty()) {
+                            skillRepository?.skillIdFromPath(target)?.let { sid ->
                                 skillRepository.recordSkillUse(sid)
                             }
                         }
@@ -13102,18 +13127,15 @@ class ChatViewModel(
             FileEditTool.NAME -> FileEditTool.execute(argsJson, fsSessionId, context).also {
                 if (it.success) maybeReloadSkillsForPath(argsJson)
             }
-            // T178: pass sessionId + context so read_image routes through
-            // resolveSessionHostPath like file_read/write/edit do — without
-            // these, the tool consults the global last-writer-wins
-            // bindMounts map and would surface another session's
-            // /var/minis/{workspace,attachments,offloads,browser} files.
-            ReadImageTool.NAME -> executeReadImageTool(argsJson)
-            "shell_execute" -> executeShellCommand(argsJson, toolId, toolBlocks, assistantId, currentText).also {
+            ToolNames.ANDROID ->
+                com.openminis.app.tools.AndroidTool.execute(argsJson, fsSessionId, context)
+            ToolNames.BASH ->
+            executeShellCommand(argsJson, toolId, toolBlocks, assistantId, currentText).also {
                 // [T-android-skill-scan-parity] Stands in for the iOS fakefs
                 // notifier: a shell command may have cloned, edited or removed a
                 // skill. The repository compares a directory signature in the
                 // background and only reloads when /var/minis/skills changed.
-                skillRepository?.requestReload("shell_execute")
+                skillRepository?.requestReload(ToolNames.BASH)
             }
             // [T-tools-granular-switches] Refuse a switched-off tool at the
             // dispatcher too, not only by omitting it from the schema: a model
@@ -13127,13 +13149,21 @@ class ChatViewModel(
                 } else {
                     toolDisabledResult("browser_use")
                 }
-            "memory_write" -> executeMemoryWriteTool(argsJson)
-            // [T-sub-agents-v1] One tool, five actions. The legacy names are
-            // accepted so a replayed call from a transcript written before the
-            // rename still dispatches instead of hitting "Unknown tool".
-            com.openminis.app.agent.jobs.HelperRunner.TOOL_NAME,
-            com.openminis.app.agent.jobs.HelperRunner.LEGACY_TOOL_NAME,
-            com.openminis.app.agent.jobs.HelperRunner.LEGACY_STATUS_TOOL_NAME ->
+            // [T-android-tool-surface] memory_write + memory_get are one tool.
+            // `content` present means write, absent means search — the two old
+            // schemas had no other argument in common, so presence is the whole
+            // discriminator and there is nothing for a new argument to collide
+            // with.
+            ToolNames.MEMORY -> {
+                val hasContent = runCatching {
+                    JSONObject(argsJson).optString("content", "").isNotEmpty()
+                }.getOrDefault(false)
+                if (hasContent) executeMemoryWriteTool(argsJson) else executeMemoryGetTool(argsJson)
+            }
+            // [T-sub-agents-v1] One tool, five actions. ToolNames.canonical()
+            // folds subagent_task/delegate_task/agent_status into `subagent`
+            // upstream, so a replayed pre-rename call lands here too.
+            ToolNames.SUBAGENT ->
                 if (com.openminis.app.tools.AgentToolSwitch.AGENTS.isEnabled(context)) {
                     // Route on the ACTION, not on the result shape: a control
                     // call (status/steer/cancel/resume) is a different operation
@@ -13170,7 +13200,6 @@ class ChatViewModel(
                         false,
                     )
                 }
-            "memory_get" -> executeMemoryGetTool(argsJson)
             else -> ToolExecutionResult("Unknown tool: $name", false)
         }
     }
@@ -14133,7 +14162,7 @@ class ChatViewModel(
         runCatching {
             val path = JSONObject(argsJson).optString("path", "")
             if (path.contains("/skills/") && path.endsWith("SKILL.md")) {
-                skillRepository?.requestReload("file_write", force = true)
+                skillRepository?.requestReload(ToolNames.WRITE, force = true)
             }
         }
     }
@@ -14185,7 +14214,7 @@ class ChatViewModel(
             // task's prefilled command, and the schema now states the cap.
             val timeoutSec = args.optInt("timeout", 900).coerceIn(1, SHELL_TIMEOUT_MAX_SEC)
             val delaySec = args.optInt("delay", 0).coerceAtLeast(0)
-            val toolTitle = args.optString("tool_title", "shell_execute")
+            val toolTitle = args.optString("tool_title", ToolNames.BASH)
 
             if (command.isBlank()) {
                 return ToolExecutionResult("Error: 'command' is required", false, toolTitle = toolTitle)
@@ -15228,40 +15257,19 @@ Tone and style:
 - Reply in the language that best matches the user's input. Only switch languages when the user explicitly asks.
 - Be concise. Prefer action over explanation — when the user asks for something that can be done via shell, do it directly.
 
-Active Execution Environment:
-${when (com.openminis.app.sandbox.ExecutionEnvironmentRepository.currentEnvironment.value) {
-    com.openminis.app.sandbox.ExecutionEnvironment.SANDBOX ->
-        "- SANDBOX (PRoot Alpine Linux): You are executing in an isolated Linux container. Use Alpine's apk for package management, and access workspace via /var/minis. ICMP is blocked."
-    com.openminis.app.sandbox.ExecutionEnvironment.HOST_SHELL ->
-        "- ANDROID HOST OS (/system/bin/sh): You are executing directly on the Android host user-space shell. You have access to Android tools (am, pm, dumpsys, getprop) and shared storage (/sdcard). Do not use apk add."
-    com.openminis.app.sandbox.ExecutionEnvironment.SHIZUKU ->
-        "- SHIZUKU PRIVILEGED SHELL (ADB UID 2000): You are running in a privileged ADB shell environment via Shizuku. You can manage system apps, inject input (input tap/key), and modify system settings."
-    com.openminis.app.sandbox.ExecutionEnvironment.ROOT ->
-        "- ROOT SUPERUSER (su, UID 0): You are executing with FULL ROOT PRIVILEGES on the host Android device. You have raw access to the entire Android filesystem, Linux /dev nodes, and system services. Exercise extreme caution; avoid destructive commands."
-}}
+Execution environment:
+- You run shell commands in an isolated Alpine Linux container (PRoot). Use Alpine's apk for package management, and access workspace via /var/minis. ICMP is blocked.
+- The sandbox has NO access to the host Android system. `am`, `pm`, `settings`, `dumpsys`, `/sdcard` and anything privileged are not reachable from a shell command — use the `android` tool for those. If you find yourself wanting a host command, that is the signal to call `android` instead.
+- Privileged host access (root / ADB-shell) is only ever reached through the `android` tool's `root` and `shizuku` actions, which are permission-gated. If one returns permission_denied, relay the message and point the user at [Settings → Permissions](minis://settings/permissions) — do not retry.
 
-Android framework commands (available to run via shell_execute):
-CLI tools at /usr/local/bin with the `android-` prefix give you access to Android framework capabilities and on-device control. Invoke them from shell_execute like any other binary — they are already on PATH. Each tool prints JSON (or a short human-readable line) and supports --help for full usage. Tools gated by Shizuku or AccessibilityService return permission_denied when not granted — handle that gracefully and point the user at [Settings → Permissions](minis://settings/permissions).
-- android-alarm — schedule alarms/timers in the system Clock app (`schedule <HH:MM> --label <L> [--repeat ONCE|DAILY|WEEKDAYS]`, `timer <seconds> --label <L>`, `open`). Alarms/timers are saved into the user's Android Clock — list/cancel are not supported (no system query API); tell the user to manage them from the Clock app's Alarms/Timers tabs (or `android-alarm open` / minis://views/alarm).
-- android-calendar — read/write the device calendar (`list --start YYYY-MM-DD [--end ...] [--max N]`; `create --title <T> --start <ISO> [--end <ISO>] [--description <D>] [--location <L>] [--all-day]`).
-- android-clipboard — `get | set <text> [--label L] | clear`.
-- android-contacts — `list [--max N] | search <query> [--max N] | get <id> | delete <id>`. Requires READ_CONTACTS (delete also needs WRITE_CONTACTS).
-- android-device — `[all|info|battery|storage]` — model, OS version, battery, storage (JSON).
-- android-location — `current` for device location with reverse-geocoded address; `geocode <lat> <lon>` for reverse, `forward --address "<addr>"` for forward geocoding.
-- android-notification — `send --title <T> [--body <B>] | clear | list [--max N]`. `send` triggers the system permission prompt on Android 13+ if POST_NOTIFICATIONS isn't granted. `list` reads active status-bar notifications and requires Notification Access (one-time setup; the first `list` call opens that page automatically).
-- android-open <url> — open a URL via the system handler (http/https, tel:, mailto:, geo:, market:, intent:, etc.). Use shell_execute to run `android-open <url>` when you want to open something immediately. To offer a tappable link instead, write a standard Markdown link with the URL directly — the app handles system URL schemes natively.
-- android-photos — `list [--max N] | stats | near <lat> <lon> [--radius KM] [--max N]` — query the device photo library via MediaStore.
-- android-player — audio playback sessions (`play <session> <path>`, `pause/resume/seek/stop/status <session>`, `list`).
-- android-speak — device TTS (`<text> [--rate F] [--pitch F] [--volume F]`; `--stop | --status`).
-- android-speech — microphone transcription (`listen [--language BCP47] [--max N] [--timeout SEC]`; `status`). Requires RECORD_AUDIO.
-- android-weather <latitude> <longitude> — Open-Meteo forecast (current + hourly + daily). No API key needed.
-- android-shizuku-cli — invoke privileged Android system APIs (package management, settings, system commands) via Shizuku when granted. Curated subcommands return structured JSON; for anything not covered, fall back to `android-shizuku-cli exec <any shell command>` which runs the command via `sh -c` with Shizuku privilege (same surface as `adb shell`). Run with no args (or --help) for the subcommand list.
-- android-a11y-cli — drive system UI (read screen, tap, type, swipe, scroll) via the Android AccessibilityService when enabled. Run with no args (or --help) for the subcommand list.
-- minis-open <url-or-path>: Opens a resource inside Minis without leaving the chat. Accepts http/https URLs (→ built-in WebKit preview) and chat-resource file paths under /var/minis/** (→ built-in file preview, routed by extension: images to the image viewer, .md to markdown preview, .html to HTML preview, .pdf/office docs to QuickLook, audio/video to the media player, else share sheet). Examples: minis-open https://example.com, minis-open /var/minis/workspace/report.md, minis-open /var/minis/attachments/chart.png. Prefer this over android-open for anything that can be previewed in-app so the user doesn't lose conversation context. Run android-open via shell_execute for non-web schemes (tel:, mailto:, geo:, intent:, etc.) or when the user explicitly wants the system handler.
-- minis-sessions-cli: Read chat history. `list` recent or by date range, `search --keywords` cross-session, `messages --id` to read (add `--tools` for each tool call's exact input, e.g. the shell command, and its output). Run --help for full options.
-- minis-model-use: Invoke other LLM models pre-configured by the user. Run `minis-model-use list` via shell_execute to see them (includes each model's modality capabilities like image_output, audio_output, etc.), `minis-model-use search <query>` to filter by name/provider. `minis-model-use run --model <id_or_name>` sends an OpenAI-compatible messages request; pass input via --input <json_file> or stdin, output goes to stdout or --output <path>. The OpenAI shape is the PRIMARY input for every model and modality; standard params are auto-converted to the underlying provider, so do not hand-write provider-native bodies as the primary input. For provider-specific extras the standard schema doesn't model (web-search plugins, image-to-image fields, TTS/video or other custom endpoints), escape hatches exist for OpenAI-compatible providers (they error or are ignored on Anthropic/Gemini models): `extra_body` (object merged verbatim into the request body), a custom `endpoint` path, and a top-level `passthrough` envelope for fully verbatim requests with RAW (unparsed) responses. Results may carry `warnings` (fields that were ignored/downgraded and why) and `applied_extras` (which extras actually took effect) — read them to self-correct. Run --help for the full contract before using these. Models may support multimodal output (image generation, TTS/audio, video) — check the modalities field in list output. For image_output models, pass generation params in the input JSON: top-level `n`/`size`/`quality`/`prompt` (OpenAI /images/generations style) or `generation_config.{aspect_ratio,image_size,number_of_images,person_generation}` (Gemini). Run with --help for full usage.${modelUseDelegateNote}
-- minis-config: Read or change Minis settings programmatically. Run `minis-config --help` for subcommands and `minis-config topic-help <topic>` for details on a specific area. For array-valued fields (e.g. `models`, `groups`, `envvars`, `defaults.agentLoopEntries`) the `get` subcommand accepts `--filter <keywords>` (whitespace-AND, case-insensitive substring match against each element's JSON) and `--page <N> --page-size <N>` (default 20, max 100) — use these instead of dumping the full list when you only need a subset, and check the response's `pagination` / `agent_hint` fields for the next-page command. Every write triggers an in-app confirmation sheet and is logged to a revertable audit (1000-entry rolling log). After a successful change the response includes a `user_message` field — relay it (or paraphrase) so the user knows how to review or revert via Settings → Logs → Config Changes. If the call returns `permission_denied`, the user has disabled minis-config in [Settings → Permissions](minis://settings/permissions); relay that message and don't retry. You CAN add new providers and write their `apiKey` (literal string OR a `${'$'}${'$'}ENV_VAR` reference to copy from an env var at write time), but `get` never echoes API keys / OAuth tokens / env var values back — those reads return `permission_denied` by design. OAuth tokens and env var values are not settable via this tool; for an env var, point the user at [Set ENV_NAME](minis://settings/environments?create_key=ENV_NAME&create_value=) so they enter the value themselves.
-- minis-scheduled: Create and manage scheduled tasks — prompts that run automatically later. `minis-scheduled create --prompt "..." [--label L]` plus ONE trigger: `--after 30m` (once, after a delay), `--interval 10m [--count N]` (repeat every interval, >= 60s, N times or until deleted), `--time HH:MM [--repeat once|daily|weekdays|custom --days mon,tue,...] [--start YYYY-MM-DD] [--end YYYY-MM-DD]` (at a time of day; default once), or `--trigger on-completion --of <taskId|jobId>` (once, when that scheduled task or background sub agent job finishes; `{{result}}` in --prompt becomes its result). Options: `[--target follow-up|new|rerun --session <id> --message <id>] [--model <modelId>] [--thinking off|low|medium|high|xhigh]`; `list` shows existing tasks (with nextTriggerMs and run history), `delete --id <taskId>`, `enable`/`disable --id <taskId>`, and `run --id <taskId>` fires one immediately. Target modes: `follow-up` (DEFAULT when you run it: each fire is a new turn in THIS chat, so the result comes back here; `--session <id>` picks another chat) | `new` (each fire opens a separate new chat and the result does NOT come back here — use it only when the user explicitly wants a separate chat) | `rerun` re-runs an existing chat (--session) from a chosen user message (--message). `create` prints a `delivery` line naming where the fires will land — read it, and if it is not what the user asked for, `delete --id` and create again with the right --target. When every fire starts with the same shell command, add `--command "<shell command>"` (optionally `--command-timeout 2m`), or the general `--tool shell_execute --tool-args '{"command":"…"}'`: the command runs automatically at each fire and you receive its real output as an already-completed tool call, so you only summarise/act on it instead of deciding to run it. Run it via shell_execute when the user asks to "remind me / do X every morning / run this later / schedule a task". Run --help for full usage.${scheduledDelegateNote}
+Android reference documentation:
+Device and privileged operations go through the `android` tool (see its description for
+the action list, and `android --help <action>` for arguments). Minis' own control plane —
+settings, model providers, chat history, scheduled prompts — is documented in the
+`minis-docs` skill; read /var/minis/skills/minis-docs/SKILL.md and then the file it
+points you to. Do not guess arguments for either: one `--help` call is cheaper than a
+failed call.
+
 Interactive terminal: minis://open_terminal opens a terminal for tasks that require interactive stdin (passwords, ssh, TUI apps like htop/vi). Write it as a Markdown link in your response — the app opens it when tapped. The optional init_command parameter pre-fills (NOT executes) a command; it MUST be fully percent-encoded (spaces → %20, & → %26, | → %7C, etc.). Only use this for genuinely interactive sessions — for everything else, use shell_execute. Examples: [Open Terminal](minis://open_terminal), [Login to SSH](minis://open_terminal?init_command=ssh%20user%40host).
 
 Environment variables:

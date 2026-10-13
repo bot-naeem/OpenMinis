@@ -90,6 +90,14 @@ object NativeOffloadServer {
         Log.d(TAG, "register '$name' (total=${handlers.size})")
     }
 
+    /**
+     * [T-android-tool-surface] Lookup by name, for callers that are not the
+     * guest shell — the `android` tool resolves an action to its handler this
+     * way instead of holding its own references, so a tool action and the
+     * matching `android-*` binary can never drift apart.
+     */
+    fun handlerFor(name: String): NativeOffloadHandler? = handlers[name]
+
     @Synchronized
     fun start(rootfsDir: File) {
         rootfsTmpDir = File(rootfsDir, "tmp")
