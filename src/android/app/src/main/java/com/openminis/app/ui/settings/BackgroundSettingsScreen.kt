@@ -93,7 +93,6 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
     val backgroundOverlayEnabled by backgroundRepo.backgroundOverlayEnabled.collectAsState()
     // [T-android-dynamic-island] Live-Updates toggle + device capability.
     val dynamicIslandEnabled by backgroundRepo.dynamicIslandEnabled.collectAsState()
-    val residentAssistantEnabled by backgroundRepo.residentAssistantEnabled.collectAsState()
 
     var ignoringOptimizations by remember {
         mutableStateOf(PowerOptimizationManager.isIgnoringBatteryOptimizations(context))
@@ -103,9 +102,6 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
             Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
                 Settings.canDrawOverlays(context),
         )
-    }
-    var a11yActive by remember {
-        mutableStateOf(com.openminis.app.assistant.ScreenContextCapturer.isAccessibilityActive())
     }
     // [T-android-dynamic-island] Re-probed on ON_RESUME (spec §3) so a
     // Live-Updates grant the user toggled in system settings is picked up
@@ -125,8 +121,6 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
                 canDrawOverlays =
                     Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
                         Settings.canDrawOverlays(context)
-                a11yActive =
-                    com.openminis.app.assistant.ScreenContextCapturer.isAccessibilityActive()
                 // [T-android-island-capability-ttl] The user may have just
                 // flipped Live Updates in system settings: drop the cached
                 // answer so this re-probe really asks the platform.
@@ -174,23 +168,6 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
                 onCheckedChange = { backgroundRepo.setTaskNotificationsEnabled(it) },
             )
             BgFooter(stringResource(R.string.settings_task_notifications_footer))
-
-            // Resident notification assistant toggle
-            Spacer(Modifier.size(8.dp))
-            BgToggleRow(
-                icon = Icons.Outlined.PhoneAndroid,
-                iconColor = Color(0xFFFF9500),
-                title = stringResource(R.string.settings_resident_assistant),
-                checked = residentAssistantEnabled,
-                onCheckedChange = { backgroundRepo.setResidentAssistantEnabled(it) },
-            )
-            BgFooter(
-                if (!a11yActive && residentAssistantEnabled) {
-                    stringResource(R.string.settings_resident_assistant_footer_no_a11y)
-                } else {
-                    stringResource(R.string.settings_resident_assistant_footer)
-                }
-            )
 
             // T-bg-overlay phase 2: floating tool-status overlay toggle.
             // Tapping ON without SYSTEM_ALERT_WINDOW deep-links the user to

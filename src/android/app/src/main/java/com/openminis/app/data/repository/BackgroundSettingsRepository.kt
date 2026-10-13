@@ -84,21 +84,6 @@ class BackgroundSettingsRepository(context: Context) {
         prefs.edit().putInt(KEY_BG_OVERLAY_X, x).putInt(KEY_BG_OVERLAY_Y, y).apply()
     }
 
-    /**
-     * Notification-bar resident assistant toggle.
-     * When ON, the foreground service stays alive with a notification card
-     * allowing immediate wake-up and screen perception from anywhere.
-     */
-    private val _residentAssistantEnabled =
-        MutableStateFlow(prefs.getBoolean(KEY_RESIDENT_ASSISTANT_ENABLED, false))
-    val residentAssistantEnabled: StateFlow<Boolean> =
-        _residentAssistantEnabled.asStateFlow()
-
-    fun setResidentAssistantEnabled(value: Boolean) {
-        prefs.edit().putBoolean(KEY_RESIDENT_ASSISTANT_ENABLED, value).apply()
-        _residentAssistantEnabled.value = value
-    }
-
     companion object {
         private const val PREFS_NAME = "background_settings"
         private const val KEY_TASK_NOTIFICATIONS = "taskNotificationsEnabled"
@@ -107,6 +92,5 @@ class BackgroundSettingsRepository(context: Context) {
         private const val KEY_BG_OVERLAY_X = "backgroundOverlayX"
         private const val KEY_BG_OVERLAY_Y = "backgroundOverlayY"
         private const val KEY_DYNAMIC_ISLAND_ENABLED = "dynamicIslandEnabled"
-        private const val KEY_RESIDENT_ASSISTANT_ENABLED = "residentAssistantEnabled"
     }
 }

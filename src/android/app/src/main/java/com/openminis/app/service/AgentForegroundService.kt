@@ -1092,59 +1092,16 @@ class AgentForegroundService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val isResidentIdle = sessionCount == 0 && SessionActivityTracker.residentAssistantEnabled.value
-        val assistantIntent = Intent(this, com.openminis.app.assistant.ScreenAssistantActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val assistantPendingIntent = PendingIntent.getActivity(
-            this,
-            2,
-            assistantIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val voiceIntent = Intent(this, Class.forName("com.openminis.app.MainActivity")).apply {
-            data = Uri.parse("minis://action/voice_chat")
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val voicePendingIntent = PendingIntent.getActivity(
-            this,
-            3,
-            voiceIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        if (isResidentIdle) {
-            val titleText = getString(R.string.resident_notification_title)
-            val collapsedText = getString(R.string.resident_notification_desc)
-            val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_screen_assistant)
-                .setContentTitle(titleText)
-                .setContentText(collapsedText)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(collapsedText))
-                .setOngoing(true)
-                .setShowWhen(false)
-                .setUsesChronometer(false)
-                .setOnlyAlertOnce(true)
-                .setContentIntent(assistantPendingIntent)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setCategory(NotificationCompat.CATEGORY_SERVICE)
-                .addAction(
-                    R.drawable.ic_screen_assistant,
-                    getString(R.string.resident_action_screen),
-                    assistantPendingIntent,
-                )
-                .addAction(
-                    R.drawable.ic_shortcut_voice_chat,
-                    getString(R.string.resident_action_voice),
-                    voicePendingIntent,
-                )
-                .addAction(
-                    R.drawable.ic_shortcut_new_chat,
-                    getString(R.string.resident_action_main),
-                    pendingIntent,
-                )
-            return builder.build()
-        }
+        // [T-android-remove-resident-assistant] The resident-assistant
+        // notification variant, the Quick Settings tile and the screen-perception
+        // assistant behind them are gone. The Activity that produced them
+        // captured the screen from inside its own composables — after its own
+        // translucent scrim was already composited over the target app — so
+        // "ask about the current screen" photographed Minis rather than
+        // whatever the user was looking at, and the foreground package it
+        // reported was com.openminis.app. There is no correct version of this
+        // feature that does not move the capture off the Activity first, so
+        // the whole thing comes out rather than shipping the broken half.
 
         val sessionLabel = resources.getQuantityString(
             R.plurals.bg_service_sessions, sessionCount, sessionCount,

@@ -475,26 +475,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Screen perception assistant floating dialog -->
-        <activity
-            android:name=".assistant.ScreenAssistantActivity"
-            android:exported="true"
-            android:launchMode="singleTop"
-            android:excludeFromRecents="true"
-            android:theme="@style/Theme.Minis.TranslucentDialog" />
-
-        <!-- Quick Settings Tile for screen perception assistant -->
-        <service
-            android:name=".assistant.MinisAssistantTileService"
-            android:label="@string/tile_screen_assistant_label"
-            android:icon="@drawable/ic_screen_assistant"
-            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.service.quicksettings.action.QS_TILE" />
-            </intent-filter>
-        </service>
-
         <!-- Agent foreground service -->
         <!-- T-android-fgs-timeout-crash: type=mediaPlayback to escape the
              dataSync 6h cap. See FOREGROUND_SERVICE_MEDIA_PLAYBACK

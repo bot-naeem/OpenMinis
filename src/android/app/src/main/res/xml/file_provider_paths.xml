@@ -10,8 +10,6 @@
          cache while the camera Activity is in flight, leaving the FileProvider
          URI pointing at nothing by the time the result returns. -->
     <files-path name="camera-photos" path="camera-photos/" />
-    <!-- Screen assistant captured screenshots -->
-    <files-path name="screen-assistant" path="screen-assistant/" />
     <!-- T207: FullscreenImageViewer share / copy temp files. T197 wrote them
          to cacheDir root, which isn't covered by any declared root, so
          FileProvider.getUriForFile threw IllegalArgumentException and the

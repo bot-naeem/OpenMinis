@@ -396,25 +396,9 @@ object SessionActivityTracker {
      */
     fun shouldRunServiceNow(): Boolean = shouldRunService()
 
-    private val _residentAssistantEnabled = MutableStateFlow(false)
-    val residentAssistantEnabled: StateFlow<Boolean> = _residentAssistantEnabled.asStateFlow()
-
-    fun setResidentAssistantEnabled(enabled: Boolean) {
-        if (_residentAssistantEnabled.value == enabled) return
-        _residentAssistantEnabled.value = enabled
-        Log.d(TAG, "residentAssistantEnabled=$enabled")
-        if (enabled) {
-            startServiceIfNeeded()
-        } else if (!shouldRunService()) {
-            stopService()
-        } else {
-            updateService()
-        }
-    }
-
     private fun shouldRunService(): Boolean =
         _activeSessions.value.isNotEmpty() || _presentSessions.value.isNotEmpty() ||
-            _overlayCompletionPending.value || _residentAssistantEnabled.value
+            _overlayCompletionPending.value
 
     /**
      * [T-android-overlay-completion-survives-stop] True while a finished turn
