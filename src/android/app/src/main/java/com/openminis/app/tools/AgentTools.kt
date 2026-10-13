@@ -145,6 +145,7 @@ object AgentTools {
         required = listOf("tool_title", "command"),
         propertyOrdering = listOf("tool_title", "command", "timeout", "delay"),
     )
+    }
 
     // Aligned with iOS AIChatViewModel.swift browser_use definition
     private fun browserUseDefinition(): AgentToolDefinition = AgentToolDefinition(
