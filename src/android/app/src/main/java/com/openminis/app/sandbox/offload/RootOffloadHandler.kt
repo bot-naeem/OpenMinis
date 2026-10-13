@@ -40,9 +40,9 @@ class RootOffloadHandler(private val context: Context) : NativeOffloadHandler {
             )
         }
 
-        // Permission gate first — same shape as ShizukuOffloadHandler, so a
-        // revoked grant is reported identically no matter which backend asked.
-        OffloadGate.enforce("root_cli", "android-root-cli", args, request)?.let { return it }
+        // Permission gate first — passes the command detail so the interactive
+        // prompt card can show the user exactly what command the agent wants to run.
+        OffloadGate.enforce("root_cli", "android-root-cli", args, request, detail = command)?.let { return it }
 
         // Hard safety boundary: prevent brick-risk operations, mass deletions,
         // and partition corruption regardless of user permissions.

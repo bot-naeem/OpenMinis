@@ -126,6 +126,12 @@ internal fun ChatViewModel.filteredSlashCommands(): List<SlashCommand> {
             "clear" -> cmd.copy(
                 subtitle = context.getString(R.string.slash_clear_subtitle),
             )
+            "root" -> cmd.copy(
+                subtitle = context.getString(
+                    if (sessionRootEnabled.value) R.string.slash_root_subtitle_on
+                    else R.string.slash_root_subtitle_off,
+                ),
+            )
             else -> cmd
         }
     }

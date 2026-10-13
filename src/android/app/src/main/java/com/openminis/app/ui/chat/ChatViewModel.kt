@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Extension
@@ -2684,6 +2685,15 @@ class ChatViewModel(
         MutableStateFlow(com.openminis.app.data.MemoryGlobalPrefs.isGlobalEnabled(context))
     val memoryEnabled: StateFlow<Boolean> = _memoryEnabled.asStateFlow()
 
+    /** Session-level Root pre-authorization toggle. */
+    internal val _sessionRootEnabled = MutableStateFlow(false)
+    val sessionRootEnabled: StateFlow<Boolean> = combine(
+        _sessionRootEnabled,
+        OffloadPermissionManager.sessionGrantsVersion,
+    ) { local, _ ->
+        local || OffloadPermissionManager.isSessionGranted("root_cli", activeSessionId)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     /**
      * [T-android-usage-capsule-style] Message ids whose token-usage capsule is
      * revealed. Default empty: the capsule is an easter egg, not a permanent
@@ -3180,6 +3190,12 @@ class ChatViewModel(
             title = "Thinking",
             subtitle = "",
         ),
+        SlashCommand(
+            id = "root",
+            icon = Icons.Default.Lock,
+            title = "Root",
+            subtitle = "",
+        ),
     )
 
     // [T-android-split-chat] filteredSlashCommands / updateSlashMenuState /
@@ -3262,6 +3278,7 @@ class ChatViewModel(
             "compact" -> compactAll()
             "memory" -> toggleMemoryEnabled()
             "thinking" -> toggleThinking()
+            "root" -> toggleSessionRootEnabled()
             "clear" -> _clearChatConfirmRequested.value = true
             else -> AppLogger.info(TAG, "[Slash] unrecognized id=${cmd.id} — no dispatch")
         }
@@ -3309,6 +3326,26 @@ class ChatViewModel(
             text = "Thinking set to ${newLevel.displayName.lowercase()}.",
             iconKind = "thinking",
         )
+    }
+
+    /** Toggle session root pre-authorization on/off, updating OffloadPermissionManager and appending a system-info message. */
+    fun toggleSessionRootEnabled() {
+        val target = !sessionRootEnabled.value
+        _sessionRootEnabled.value = target
+        val sid = activeSessionId
+        if (target) {
+            OffloadPermissionManager.grantSession("root_cli", sid)
+            appendSystemInfo(
+                text = context.getString(R.string.session_root_enabled_info),
+                iconKind = "shield",
+            )
+        } else {
+            OffloadPermissionManager.revokeSession("root_cli", sid)
+            appendSystemInfo(
+                text = context.getString(R.string.session_root_disabled_info),
+                iconKind = "shield",
+            )
+        }
     }
 
     /**
@@ -6035,7 +6072,12 @@ class ChatViewModel(
             modelId = modelId,
             memoryEnabled = _memoryEnabled.value,
         )
+        val oldDraftSid = sessionId
         realSessionId = session.id
+        if (_sessionRootEnabled.value || OffloadPermissionManager.isSessionGranted("root_cli", oldDraftSid)) {
+            OffloadPermissionManager.grantSession("root_cli", session.id)
+            _sessionRootEnabled.value = true
+        }
         // [T-android-opencode-session-header] Hand the just-minted real id to
         // the provider built while this chat was still a draft. Without it the
         // FIRST turn of every new conversation would reach OpenCode Go with no
@@ -6240,6 +6282,7 @@ class ChatViewModel(
             _sessionTitle.value = session.title ?: UNTITLED_SESSION_TITLE
             _sessionCategory.value = session.category
             _memoryEnabled.value = session.memoryEnabled != 0
+            _sessionRootEnabled.value = OffloadPermissionManager.isSessionGranted("root_cli", sessionId)
             // T239: hydrate persisted thinking-mode override. null = unset
             // (use OFF as the legacy default); non-null = explicit user
             // choice persisted across cold-start. runCatching guards against

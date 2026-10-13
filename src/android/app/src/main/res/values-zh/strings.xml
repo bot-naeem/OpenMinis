@@ -318,10 +318,11 @@
     <string name="time_today">今天</string>
     <string name="offload_perm_dialog_title">权限请求</string>
     <string name="offload_perm_dialog_intro">AI 助手想使用：</string>
+    <string name="offload_perm_dialog_cmd_request">Agent 请求执行：</string>
     <string name="offload_perm_dialog_tool_label">工具：%1$s</string>
-    <string name="offload_perm_allow_session">本会话总是允许</string>
-    <string name="offload_perm_allow_once">允许这一次</string>
-    <string name="offload_perm_deny_session">本会话里拒绝</string>
+    <string name="offload_perm_allow_session">本次会话允许</string>
+    <string name="offload_perm_allow_once">同意此条</string>
+    <string name="offload_perm_deny_session">拒绝</string>
     <string name="session_skills_title">会话中的技能</string>
     <string name="session_skills_header_installed">已安装</string>
     <string name="session_skills_enable_all">全部启用</string>
@@ -1234,6 +1235,7 @@
     <string name="chat_menu_enhanced_cache">增强缓存</string>
     <string name="chat_menu_fast_mode">启用高速模式</string>
     <string name="chat_menu_auto_compact">自动压缩</string>
+    <string name="chat_menu_session_root">会话 Root 授权</string>
     <string name="context_near_capacity_title">上下文接近上限</string>
     <string name="context_near_capacity_message">对话上下文即将占满。发送前可先压缩历史以释放空间。启用自动压缩后，之后将自动完成此操作。</string>
     <string name="context_compact_and_send">压缩并发送</string>
@@ -1538,6 +1540,10 @@
     <string name="slash_thinking_subtitle">思考 %1$s — 点击切换</string>
     <string name="slash_thinking_unsupported">当前模型不支持</string>
     <string name="slash_clear_subtitle">清空当前会话的所有消息</string>
+    <string name="slash_root_subtitle_on">本会话已预授权 Root（免确认）</string>
+    <string name="slash_root_subtitle_off">单次命令按需确认（默认）</string>
+    <string name="session_root_enabled_info">已开启会话 Root 预授权，Root 命令将直接放行执行。</string>
+    <string name="session_root_disabled_info">已关闭会话 Root 预授权，每次调用 Root 命令将弹窗确认。</string>
     <string name="thinking_level_off">关闭</string>
     <string name="thinking_level_low">低</string>
     <string name="thinking_level_medium">中</string>

@@ -158,7 +158,7 @@ fun OffloadPermissionScreen(
                 subtitle = stringResource(R.string.perm_root_cli_sub),
                 icon = Icons.Outlined.Lock,
                 iconColor = Color(0xFFFF3B30),
-                level = levels["root_cli"] ?: PermissionLevel.NOT_ALLOWED,
+                level = levels["root_cli"] ?: PermissionLevel.ASK_ONCE,
                 onLevelChange = { OffloadPermissionManager.setLevel("root_cli", it) },
                 statusText = stringResource(R.string.perm_root_status),
                 statusColor = MaterialTheme.colorScheme.onSurfaceVariant,

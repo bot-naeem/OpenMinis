@@ -160,6 +160,7 @@ import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Lock
 import com.openminis.app.ui.components.MinisIcons
 import com.openminis.app.ui.components.MenuItemIcon
 import com.openminis.app.ui.components.MinisMenuDivider
@@ -3436,6 +3437,21 @@ fun ChatScreen(
                                     SettingsSwitch(
                                         checked = autoCompactOn,
                                         onCheckedChange = { viewModel.setAutoCompactEnabled(it) },
+                                    )
+                                },
+                            )
+                            // Session Root pre-authorization toggle
+                            val sessionRootOn by viewModel.sessionRootEnabled.collectAsState()
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.chat_menu_session_root)) },
+                                onClick = { viewModel.toggleSessionRootEnabled() },
+                                leadingIcon = {
+                                    MenuItemIcon(Icons.Outlined.Lock)
+                                },
+                                trailingIcon = {
+                                    SettingsSwitch(
+                                        checked = sessionRootOn,
+                                        onCheckedChange = { viewModel.toggleSessionRootEnabled() },
                                     )
                                 },
                             )

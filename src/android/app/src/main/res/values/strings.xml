@@ -363,13 +363,14 @@
     <string name="time_today">Today</string>
     <string name="offload_perm_dialog_title">Permission Request</string>
     <string name="offload_perm_dialog_intro">The Minis Agent wants to use:</string>
+    <string name="offload_perm_dialog_cmd_request">Agent requests to execute:</string>
     <string name="offload_perm_dialog_tool_label">Tool: %1$s</string>
     <!-- T338: session-scoped tri-action labels for the ASK_ONCE dialog.
          None of these persist a PermissionLevel — the user goes to
          Settings → Permissions to make a permanent change. -->
     <string name="offload_perm_allow_session">Allow in this session</string>
     <string name="offload_perm_allow_once">Allow once</string>
-    <string name="offload_perm_deny_session">Deny in this session</string>
+    <string name="offload_perm_deny_session">Deny</string>
     <string name="session_skills_title">Skills in Session</string>
     <string name="session_skills_header_installed">INSTALLED</string>
     <string name="session_skills_enable_all">Enable All</string>
@@ -1363,6 +1364,7 @@
     <string name="chat_menu_enhanced_cache">Enhanced Cache</string>
     <string name="chat_menu_fast_mode">Enable Fast Mode</string>
     <string name="chat_menu_auto_compact">Auto Compact</string>
+    <string name="chat_menu_session_root">Session Root</string>
     <string name="context_near_capacity_title">Context Near Capacity</string>
     <string name="context_near_capacity_message">Conversation context is nearly full. Compact the history to free up space before sending. Enabling auto-compact will do this automatically from now on.</string>
     <string name="context_compact_and_send">Compact &amp; Send</string>
@@ -1690,6 +1692,10 @@
     <string name="slash_thinking_subtitle">Thinking %1$s — tap to toggle</string>
     <string name="slash_thinking_unsupported">Not supported by current model</string>
     <string name="slash_clear_subtitle">Clear all messages in this session</string>
+    <string name="slash_root_subtitle_on">Root pre-authorized for this session</string>
+    <string name="slash_root_subtitle_off">Ask confirmation per command (default)</string>
+    <string name="session_root_enabled_info">Session Root pre-authorization enabled. Root commands execute without prompting.</string>
+    <string name="session_root_disabled_info">Session Root pre-authorization disabled. Root commands require confirmation.</string>
     <string name="thinking_level_off">Off</string>
     <string name="thinking_level_low">Low</string>
     <string name="thinking_level_medium">Medium</string>

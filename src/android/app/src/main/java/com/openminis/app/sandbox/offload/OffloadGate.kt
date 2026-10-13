@@ -37,17 +37,28 @@ internal object OffloadGate {
      * short-circuit with a PERMISSION_DENIED envelope pointing the
      * user to Settings → Permissions.
      */
-    fun allow(toolName: String, displayName: String, sessionId: String? = null): Boolean = runBlocking {
+    fun allow(
+        toolName: String,
+        displayName: String,
+        sessionId: String? = null,
+        detail: String? = null,
+    ): Boolean = runBlocking {
         OffloadPermissionManager.checkPermission(
-            toolName,
-            displayName,
-            sessionId ?: OffloadPermissionManager.OFFLOAD_GLOBAL_SESSION_ID,
+            toolName = toolName,
+            toolTitle = displayName,
+            sessionId = sessionId ?: OffloadPermissionManager.OFFLOAD_GLOBAL_SESSION_ID,
+            detail = detail,
         )
     }
 
     /** Overload that pulls the chat session id straight off the request. */
-    fun allow(toolName: String, displayName: String, request: NativeOffloadRequest): Boolean =
-        allow(toolName, displayName, request.sessionId)
+    fun allow(
+        toolName: String,
+        displayName: String,
+        request: NativeOffloadRequest,
+        detail: String? = null,
+    ): Boolean =
+        allow(toolName, displayName, request.sessionId, detail = detail)
 
     /**
      * Convenience: gate the call and return null when allowed, or a
@@ -59,8 +70,9 @@ internal object OffloadGate {
         displayName: String,
         args: OffloadArgs,
         request: NativeOffloadRequest? = null,
+        detail: String? = null,
     ): NativeOffloadResult? {
-        if (allow(toolName, displayName, request?.sessionId)) return null
+        if (allow(toolName, displayName, request?.sessionId, detail = detail)) return null
         val body = JSONObject()
             .put("error", "permission_denied")
             .put("tool", toolName)

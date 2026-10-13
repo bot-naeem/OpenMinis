@@ -29,6 +29,7 @@ object OffloadPermissionManager {
         val toolTitle: String,
         val description: String,
         val sessionId: String,
+        val detail: String? = null,
     )
 
     enum class PermissionCategory(val displayName: String) {
@@ -88,14 +89,12 @@ object OffloadPermissionManager {
         // is already authorized.
         ToolPermissionInfo("a11y_cli", "android-a11y-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.NOT_ALLOWED),
         ToolPermissionInfo("shizuku_cli", "android-shizuku-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.NOT_ALLOWED),
-        // [T-android-sandbox-only] The root backend. NOT_ALLOWED out of the
-        // box, and deliberately in the same category as shizuku_cli: before
-        // the execution-environment rework, `su -c <anything>` was one pref
-        // away from shell_execute and needed no permission at all. Now it is
-        // gated like every other privileged path, which is the only boundary
-        // this kernel can offer — `su` inside a mount namespace keeps its full
-        // capability set, so confinement has to live at this surface.
-        ToolPermissionInfo("root_cli", "android-root-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.NOT_ALLOWED),
+        // [T-android-sandbox-only] The root backend. ASK_ONCE out of the
+        // box: in a chat session without pre-authorization, each invocation
+        // prompts the user with the command detail. When the user enables
+        // session root or accepts "Allow in this session", commands bypass
+        // the prompt for that session.
+        ToolPermissionInfo("root_cli", "android-root-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.ASK_ONCE),
         // [T-android-sandbox-only] The file tools now resolve on the host, so
         // they carry the same reach as any other host write. They default to
         // BYPASS for the same reason the CLI above defaults to BYPASS: this app
@@ -135,6 +134,25 @@ object OffloadPermissionManager {
      *  request after they already said no. Cleared with
      *  [clearSessionGrants]. */
     private val sessionDenials = mutableMapOf<String, MutableSet<String>>() // sessionId -> set of toolNames
+
+    /** Increments whenever session grants or denials change so UI state flows can react. */
+    private val _sessionGrantsVersion = MutableStateFlow(0)
+    val sessionGrantsVersion: StateFlow<Int> = _sessionGrantsVersion.asStateFlow()
+
+    fun isSessionGranted(toolName: String, sessionId: String): Boolean {
+        return sessionGrants[sessionId]?.contains(toolName) == true
+    }
+
+    fun grantSession(toolName: String, sessionId: String) {
+        sessionDenials[sessionId]?.remove(toolName)
+        sessionGrants.getOrPut(sessionId) { mutableSetOf() }.add(toolName)
+        _sessionGrantsVersion.value++
+    }
+
+    fun revokeSession(toolName: String, sessionId: String) {
+        sessionGrants[sessionId]?.remove(toolName)
+        _sessionGrantsVersion.value++
+    }
 
     /** Active permission request waiting for user response. */
     private val _pendingRequest = MutableStateFlow<PermissionRequest?>(null)
@@ -405,30 +423,41 @@ object OffloadPermissionManager {
      * For ASK_ONCE, suspends until user responds via the dialog.
      * Returns true if allowed.
      */
-    suspend fun checkPermission(toolName: String, toolTitle: String, sessionId: String): Boolean {
+    suspend fun checkPermission(
+        toolName: String,
+        toolTitle: String,
+        sessionId: String,
+        detail: String? = null,
+    ): Boolean {
+        // T338: a prior "Deny in this session" short-circuits
+        // before any grants check or dialog so the agent can't
+        // spam the user.
+        val denials = sessionDenials.getOrPut(sessionId) { mutableSetOf() }
+        if (toolName in denials) return false
+
+        val grants = sessionGrants.getOrPut(sessionId) { mutableSetOf() }
+        if (toolName in grants) return true
+
         val level = getLevel(toolName)
         return when (level) {
             PermissionLevel.BYPASS -> true
             PermissionLevel.NOT_ALLOWED -> false
             PermissionLevel.ASK_ONCE -> {
-                // T338: a prior "Deny in this session" short-circuits
-                // before any grants check or dialog so the agent can't
-                // spam the user.
-                val denials = sessionDenials.getOrPut(sessionId) { mutableSetOf() }
-                if (toolName in denials) return false
-
-                val grants = sessionGrants.getOrPut(sessionId) { mutableSetOf() }
-                if (toolName in grants) return true
-
                 // Show dialog and wait for response.
                 val info = toolRegistry.find { it.toolName == toolName }
                 val response = suspendCancellableCoroutine<Response> { cont ->
                     pendingContinuation = cont
+                    val desc = if (!detail.isNullOrBlank()) {
+                        "Agent requests to execute: $detail"
+                    } else {
+                        "Allow ${info?.displayName ?: toolName} access?"
+                    }
                     _pendingRequest.value = PermissionRequest(
                         toolName = toolName,
                         toolTitle = toolTitle,
-                        description = "Allow ${info?.displayName ?: toolName} access?",
+                        description = desc,
                         sessionId = sessionId,
+                        detail = detail,
                     )
                     cont.invokeOnCancellation {
                         _pendingRequest.value = null
@@ -439,6 +468,7 @@ object OffloadPermissionManager {
                 when (response) {
                     Response.ALLOW_SESSION -> {
                         grants.add(toolName)
+                        _sessionGrantsVersion.value++
                         true
                     }
                     Response.ALLOW_ONCE -> true  // no caching; next call re-prompts
@@ -462,5 +492,6 @@ object OffloadPermissionManager {
     fun clearSessionGrants(sessionId: String) {
         sessionGrants.remove(sessionId)
         sessionDenials.remove(sessionId)
+        _sessionGrantsVersion.value++
     }
 }

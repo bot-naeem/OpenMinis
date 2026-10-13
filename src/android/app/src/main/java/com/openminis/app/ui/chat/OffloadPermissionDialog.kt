@@ -6,15 +6,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.openminis.app.R
@@ -30,9 +33,9 @@ import com.openminis.app.ui.components.MinisTextButton
  * stored PermissionLevel — to make a permanent change the user goes
  * to Settings → Permissions and picks Bypass / Not Allowed there.
  *
+ *   • Allow once            — grant only this call; next call re-prompts.
  *   • Allow in this session — grant for the remaining session, no
  *     more prompts for this tool until the session ends.
- *   • Allow once            — grant only this call; next call re-prompts.
  *   • Deny in this session  — refuse + remember, so the agent can't
  *     spam the same dialog after the user already said no.
  *
@@ -74,10 +77,32 @@ fun OffloadPermissionDialog() {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(12.dp))
-                Text(
-                    req.description,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                if (!req.detail.isNullOrBlank()) {
+                    Text(
+                        stringResource(R.string.offload_perm_dialog_cmd_request),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            text = req.detail,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                            ),
+                            modifier = Modifier.padding(10.dp),
+                        )
+                    }
+                } else {
+                    Text(
+                        req.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
         },
         confirmButton = {
@@ -87,19 +112,19 @@ fun OffloadPermissionDialog() {
                     .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // Allow in this session — happy path goes first.
+                // Allow once — grant just this call.
                 MinisButton(
-                    onClick = { OffloadPermissionManager.respondToRequest(OffloadPermissionManager.Response.ALLOW_SESSION) },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.offload_perm_allow_session))
-                }
-                // Allow once — no caching; next call re-prompts.
-                MinisOutlinedButton(
                     onClick = { OffloadPermissionManager.respondToRequest(OffloadPermissionManager.Response.ALLOW_ONCE) },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(stringResource(R.string.offload_perm_allow_once))
+                }
+                // Allow in this session — grant for the remaining session.
+                MinisOutlinedButton(
+                    onClick = { OffloadPermissionManager.respondToRequest(OffloadPermissionManager.Response.ALLOW_SESSION) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.offload_perm_allow_session))
                 }
                 // Deny in this session — refuse + remember.
                 MinisTextButton(
