@@ -2327,4 +2327,22 @@
     <string name="settings_resident_assistant">Resident Notification Assistant</string>
     <string name="settings_resident_assistant_footer">Keeps a resident assistant in the notification drawer so you can swipe down and ask about any screen anytime.</string>
     <string name="settings_resident_assistant_footer_no_a11y">Assistant is active. Enable Accessibility Service in Settings to automatically capture screen content.</string>
+
+    <!-- Execution Environment Settings -->
+    <string name="settings_execution_environment">Execution Environment</string>
+    <string name="settings_execution_environment_subtitle">Choose where Agent commands run (Sandbox / Host / Shizuku / Root)</string>
+    <string name="exec_env_header">Agent Command Runtime</string>
+    <string name="exec_env_footer">Select where commands from shell_execute are dispatched. Root and Host modes interact with the real Android operating system.</string>
+    <string name="exec_env_sandbox_title">Sandbox (PRoot Alpine)</string>
+    <string name="exec_env_sandbox_desc">Isolated Linux container. Safe, sandboxed, and does not touch phone system files.</string>
+    <string name="exec_env_host_title">Android Host Shell</string>
+    <string name="exec_env_host_desc">Standard Android user-space shell (/system/bin/sh). Can invoke am, pm, and access /sdcard.</string>
+    <string name="exec_env_shizuku_title">Shizuku (ADB Shell)</string>
+    <string name="exec_env_shizuku_desc">Privileged ADB shell (UID 2000). System-level automation, app management, and input injection without Root.</string>
+    <string name="exec_env_root_title">Root Mode (Superuser / su)</string>
+    <string name="exec_env_root_desc">Full UID 0 Root privileges. Unrestricted access to hardware, device nodes, and private data. For geeks only.</string>
+    <string name="exec_env_root_warning_title">Enable Root Superuser Mode?</string>
+    <string name="exec_env_root_warning_message">The Agent will be given full root access (UID 0) through su. It can execute any command on your device. Please ensure you trust the agent and the prompts you send.</string>
+    <string name="exec_env_root_not_detected">su binary not found on device or permission denied.</string>
+    <string name="exec_env_shizuku_not_ready">Shizuku is not running or Minis is not authorized.</string>
 </resources>

@@ -15228,6 +15228,18 @@ Tone and style:
 - Reply in the language that best matches the user's input. Only switch languages when the user explicitly asks.
 - Be concise. Prefer action over explanation — when the user asks for something that can be done via shell, do it directly.
 
+Active Execution Environment:
+${when (com.openminis.app.sandbox.ExecutionEnvironmentRepository.currentEnvironment.value) {
+    com.openminis.app.sandbox.ExecutionEnvironment.SANDBOX ->
+        "- SANDBOX (PRoot Alpine Linux): You are executing in an isolated Linux container. Use Alpine's apk for package management, and access workspace via /var/minis. ICMP is blocked."
+    com.openminis.app.sandbox.ExecutionEnvironment.HOST_SHELL ->
+        "- ANDROID HOST OS (/system/bin/sh): You are executing directly on the Android host user-space shell. You have access to Android tools (am, pm, dumpsys, getprop) and shared storage (/sdcard). Do not use apk add."
+    com.openminis.app.sandbox.ExecutionEnvironment.SHIZUKU ->
+        "- SHIZUKU PRIVILEGED SHELL (ADB UID 2000): You are running in a privileged ADB shell environment via Shizuku. You can manage system apps, inject input (input tap/key), and modify system settings."
+    com.openminis.app.sandbox.ExecutionEnvironment.ROOT ->
+        "- ROOT SUPERUSER (su, UID 0): You are executing with FULL ROOT PRIVILEGES on the host Android device. You have raw access to the entire Android filesystem, Linux /dev nodes, and system services. Exercise extreme caution; avoid destructive commands."
+}}
+
 Android framework commands (available to run via shell_execute):
 CLI tools at /usr/local/bin with the `android-` prefix give you access to Android framework capabilities and on-device control. Invoke them from shell_execute like any other binary — they are already on PATH. Each tool prints JSON (or a short human-readable line) and supports --help for full usage. Tools gated by Shizuku or AccessibilityService return permission_denied when not granted — handle that gracefully and point the user at [Settings → Permissions](minis://settings/permissions).
 - android-alarm — schedule alarms/timers in the system Clock app (`schedule <HH:MM> --label <L> [--repeat ONCE|DAILY|WEEKDAYS]`, `timer <seconds> --label <L>`, `open`). Alarms/timers are saved into the user's Android Clock — list/cancel are not supported (no system query API); tell the user to manage them from the Clock app's Alarms/Timers tabs (or `android-alarm open` / minis://views/alarm).

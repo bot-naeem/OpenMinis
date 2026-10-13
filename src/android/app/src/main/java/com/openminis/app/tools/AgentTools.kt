@@ -110,12 +110,30 @@ object AgentTools {
         )
 
     // Aligned with iOS AIChatViewModel.swift:4982-4993
-    private fun shellExecuteDefinition(): AgentToolDefinition = AgentToolDefinition(
-        name = "shell_execute",
-        description = "Execute a command in an isolated Linux process (Alpine Linux via PRoot). " +
-            "The command runs via /bin/sh -c with stdout and stderr merged. " +
-            "Each invocation spawns a fresh process — there is no shared terminal session. " +
-            "Default timeout is 15 minutes.",
+    private fun shellExecuteDefinition(): AgentToolDefinition {
+        val env = com.openminis.app.sandbox.ExecutionEnvironmentRepository.currentEnvironment.value
+        val desc = when (env) {
+            com.openminis.app.sandbox.ExecutionEnvironment.SANDBOX ->
+                "Execute a command in an isolated Linux process (Alpine Linux via PRoot). " +
+                "The command runs via /bin/sh -c with stdout and stderr merged. " +
+                "Each invocation spawns a fresh process — there is no shared terminal session. " +
+                "Default timeout is 15 minutes."
+            com.openminis.app.sandbox.ExecutionEnvironment.HOST_SHELL ->
+                "Execute a command directly on the Android host system (/system/bin/sh). " +
+                "Standard Android environment with access to am, pm, settings, and shared storage (/sdcard). " +
+                "Each invocation spawns a fresh process. Default timeout is 15 minutes."
+            com.openminis.app.sandbox.ExecutionEnvironment.SHIZUKU ->
+                "Execute a privileged command via Shizuku ADB shell (UID 2000). " +
+                "Full ADB privileges to control apps (am, pm), inject input (input tap/key), and manage system settings. " +
+                "Default timeout is 15 minutes."
+            com.openminis.app.sandbox.ExecutionEnvironment.ROOT ->
+                "Execute a command with full Root privileges (su, UID 0). " +
+                "Unrestricted access to the entire Android operating system, Linux device nodes (/dev), and root files. " +
+                "Be extremely careful with destructive operations. Default timeout is 15 minutes."
+        }
+        return AgentToolDefinition(
+            name = "shell_execute",
+            description = desc,
         parameters = mapOf(
             "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'Install Python data analysis packages', 'List files in home directory'). Use the same language as the user."),
             "command" to AgentToolParam("string", "The shell command to execute. Supports multi-line commands directly — no special escaping needed. Keep under 1000 chars; for longer scripts, write to a file with file_write first, then run it."),
