@@ -801,12 +801,9 @@
     <string name="perm_reset_confirm_title">Reset All Permissions?</string>
     <string name="perm_reset_confirm_text">This will reset all permission preferences. Continue?</string>
     <string name="perm_reset_confirm">Reset</string>
-    <string name="perm_level_bypass">Bypass</string>
     <!-- T336 follow-up: ASK_ONCE actually grants for the whole app process
          lifetime (until next cold start), not for each individual call.
          Label rewritten to match the real behavior. -->
-    <string name="perm_level_ask_once">Once per launch</string>
-    <string name="perm_level_not_allowed">Not Allowed</string>
     <!-- T296: Permissions screen — section headers, minis-config switch, tool titles -->
     <string name="perm_section_config_tool">Configuration Tool</string>
     <!-- T336: dedicated SectionCard per integration CLI. Each surfaces
@@ -815,17 +812,12 @@
          row when system Settings need attention. -->
     <string name="perm_tool_a11y_cli">android-a11y-cli</string>
     <string name="perm_tool_shizuku_cli">android-shizuku-cli</string>
-    <string name="perm_section_a11y">Accessibility</string>
-    <string name="perm_section_shizuku">Shizuku</string>
-    <string name="perm_a11y_section_footer">android-a11y-cli lets the Agent read on-screen UI structure, perform taps and gestures, and watch system events. Both rows below must be set: pick an Agent permission and enable the Accessibility service in system Settings.</string>
-    <string name="perm_shizuku_section_footer">android-shizuku-cli grants the Agent privileged Android APIs (package install, settings put, force-stop, …) via the Shizuku service authorized over wireless ADB or root. Both rows below must be set.</string>
     <string name="perm_a11y_cli_description">Lets the Agent read screen UI, tap, type, and watch events</string>
-    <string name="perm_shizuku_cli_description">Privileged Android APIs via the Shizuku service</string>
-    <string name="perm_a11y_open_settings">Open Accessibility Settings</string>
+    <!-- [T-android-sandbox-only] Privileges &amp; integrations: the root backend. -->
+    <string name="perm_root_cli_title">Root (superuser)</string>
+    <string name="perm_root_cli_description">Run system commands through a superuser grant (UID 0). Needs Magisk or KernelSU</string>
     <string name="perm_system_authorization">System authorization</string>
     <string name="perm_agent_policy">Agent permission</string>
-    <string name="perm_a11y_system_ready">Service enabled</string>
-    <string name="perm_a11y_system_disabled">Service not enabled</string>
     <string name="perm_allow_minis_config">Allow minis-config</string>
     <string name="perm_minis_config_desc">When disabled, the Agent cannot read or modify any settings via minis-config. The change history at Logs → Config Changes remains accessible. The Agent will receive a permission_denied error and can guide you via deep links instead.</string>
     <string name="perm_section_privacy">Privacy</string>
@@ -904,7 +896,8 @@
 
     <!-- [T-android-privileged-backend] Privileged backend (Shizuku / AXManager) -->
     <string name="perm_section_privileged_backend">Privileged Backend</string>
-    <string name="perm_privileged_cli_description">Let the Agent run ADB-level system commands through a privileged backend (Shizuku or AXManager)</string>
+    <string name="perm_section_files">File tools</string>
+    <string name="perm_files_footer">These three decide whether the Agent may read or write files private to other apps under /data.</string>
 
     <string name="skill_title">Skills</string>
     <string name="skill_add">Add Skill</string>
@@ -1831,7 +1824,6 @@
     <string name="system_permissions_a11y_restricted_shizuku_sub">One tap — clears the flag without leaving Minis</string>
     <string name="system_permissions_a11y_restricted_working">Allowing…</string>
     <string name="system_permissions_a11y_restricted_failed">Failed — use the manual steps below</string>
-    <string name="a11y_service_label">Minis Accessibility</string>
     <string name="a11y_service_description">Lets Minis read on-screen UI structure, perform taps and gestures, and receive system events on behalf of Agents invoking android-a11y-cli.</string>
     <string name="a11y_service_summary">UI-layer automation backend for Minis</string>
     <string name="back">Back</string>
@@ -2305,44 +2297,50 @@
     <string name="rootfs_dns_effective_system">In effect: system DNS</string>
     <string name="rootfs_dns_effective_custom">In effect: %1$s</string>
 
-    <!-- Screen perception assistant and resident notification -->
-    <string name="tile_screen_assistant_label">Screen Assistant</string>
-    <string name="screen_assistant_title">Screen Assistant</string>
-    <string name="screen_assistant_capturing">Perceiving current screen…</string>
-    <string name="screen_assistant_captured_badge">Screen Captured</string>
-    <string name="screen_assistant_text_extracted">%1$d characters recognized</string>
-    <string name="screen_assistant_a11y_missing_title">Accessibility Service Not Enabled</string>
-    <string name="screen_assistant_a11y_missing_desc">Enable Minis Accessibility Service to automatically capture screen and text.</string>
-    <string name="screen_assistant_default_prompt">Analyze the current screen content</string>
-    <string name="screen_assistant_action_summarize">📌 Summarize page</string>
-    <string name="screen_assistant_action_translate">🔤 Translate content</string>
-    <string name="screen_assistant_action_extract">🔍 Extract key points</string>
-    <string name="screen_assistant_action_explain">💡 Explain / analyze</string>
-    <string name="screen_assistant_input_placeholder">Ask anything about this screen…</string>
-    <string name="resident_notification_title">Minis Assistant</string>
-    <string name="resident_notification_desc">Ready · Tap to ask about current screen</string>
-    <string name="resident_action_screen">Ask Screen</string>
-    <string name="resident_action_voice">Voice</string>
-    <string name="resident_action_main">Open App</string>
-    <string name="settings_resident_assistant">Resident Notification Assistant</string>
-    <string name="settings_resident_assistant_footer">Keeps a resident assistant in the notification drawer so you can swipe down and ask about any screen anytime.</string>
-    <string name="settings_resident_assistant_footer_no_a11y">Assistant is active. Enable Accessibility Service in Settings to automatically capture screen content.</string>
-
     <!-- Execution Environment Settings -->
-    <string name="settings_execution_environment">Execution Environment</string>
-    <string name="settings_execution_environment_subtitle">Choose where Agent commands run (Sandbox / Host / Shizuku / Root)</string>
-    <string name="exec_env_header">Agent Command Runtime</string>
-    <string name="exec_env_footer">Select where commands from shell_execute are dispatched. Root and Host modes interact with the real Android operating system.</string>
-    <string name="exec_env_sandbox_title">Sandbox (PRoot Alpine)</string>
-    <string name="exec_env_sandbox_desc">Isolated Linux container. Safe, sandboxed, and does not touch phone system files.</string>
-    <string name="exec_env_host_title">Android Host Shell</string>
-    <string name="exec_env_host_desc">Standard Android user-space shell (/system/bin/sh). Can invoke am, pm, and access /sdcard.</string>
-    <string name="exec_env_shizuku_title">Shizuku (ADB Shell)</string>
-    <string name="exec_env_shizuku_desc">Privileged ADB shell (UID 2000). System-level automation, app management, and input injection without Root.</string>
-    <string name="exec_env_root_title">Root Mode (Superuser / su)</string>
-    <string name="exec_env_root_desc">Full UID 0 Root privileges. Unrestricted access to hardware, device nodes, and private data. For geeks only.</string>
-    <string name="exec_env_root_warning_title">Enable Root Superuser Mode?</string>
-    <string name="exec_env_root_warning_message">The Agent will be given full root access (UID 0) through su. It can execute any command on your device. Please ensure you trust the agent and the prompts you send.</string>
-    <string name="exec_env_root_not_detected">su binary not found on device or permission denied.</string>
-    <string name="exec_env_shizuku_not_ready">Shizuku is not running or Minis is not authorized.</string>
+
+    <!-- [T-android-permissions-redesign] New layout. The screen is organised by
+         "what needs a decision", so the strings are about state and remediation,
+         not about enumerating eighteen rows. -->
+    <string name="perm_privileged_footer">These three ship switched off. They are the only capabilities that need a decision before the agent can reach the device.</string>
+    <string name="perm_section_your_changes">Your changes</string>
+    <string name="perm_no_restrictions">Nothing restricted</string>
+    <string name="perm_no_restrictions_sub">Every capability is at its shipped default</string>
+    <string name="perm_no_restifications_sub">Every capability is at its shipped default</string>
+    <string name="perm_section_data">Private data</string>
+    <string name="perm_data_footer">Calendar, location, contacts, photos and clipboard. Android still asks for its own permission the first time; these switches decide whether the agent may use them once granted.</string>
+    <string name="perm_section_more">More</string>
+    <string name="perm_more_footer">File access and the configuration tool.</string>
+    <string name="perm_section_system_grants">System grants</string>
+    <string name="perm_system_grants_footer">Android permissions that block a feature until fixed. Nothing here appears while everything is already in order.</string>
+    <string name="perm_system_grants_ok">System grants are in order</string>
+    <string name="perm_all_healthy_sub">Nothing here needs attention</string>
+    <string name="perm_group_default">%1$d capabilities, all at their default</string>
+    <string name="perm_group_customised">%1$d capabilities, %2$d changed by you</string>
+    <string name="perm_ask_each_time">Ask me every time</string>
+    <string name="perm_ask_each_time_sub">Pause and ask before the agent uses this. Without it, the agent uses it silently.</string>
+    <string name="perm_state_on">On</string>
+    <string name="perm_state_off">Off</string>
+    <string name="perm_state_not_running">Not running</string>
+    <string name="perm_state_not_installed">Not installed</string>
+    <string name="perm_root_status">su</string>
+    <string name="perm_root_cli_sub">Runs commands as UID 0 through a superuser grant. Needs Magisk or KernelSU.</string>
+    <string name="perm_shizuku_cli_sub">Runs commands through Shizuku. Install Sui to get UID 0 instead of the ADB-shell UID.</string>
+    <string name="perm_a11y_cli_sub">Lets the agent read the screen and drive the system UI. The only capture path that works before root.</string>
+    <string name="perm_tool_read">Read files</string>
+    <string name="perm_tool_write">Write files</string>
+    <string name="perm_tool_edit">Edit files</string>
+    <string name="perm_tool_read_sub">Ask before reading files private to other apps</string>
+    <string name="perm_tool_write_sub">Ask before writing files private to other apps</string>
+    <string name="perm_tool_edit_sub">Ask before editing files private to other apps</string>
+    <string name="perm_denied_privileged">%1$s is switched off. Open Minis Settings → Permissions to allow it.</string>
+    <string name="perm_denied_root">Root is switched off. Open Minis Settings → Permissions, then allow Root. You also need a superuser grant (Magisk or KernelSU) and must accept its prompt.</string>
+    <string name="perm_denied_shizuku">Shizuku is switched off. Open Minis Settings → Permissions to allow it. It also needs the Shizuku service running.</string>
+    <string name="perm_denied_a11y">Accessibility control is switched off. Open Minis Settings → Permissions to allow it, then turn the Minis service on in system Accessibility settings.</string>
+
+    <!-- [T-android-screen-perception] Failure copy. The old path silently
+         produced an empty capture and let the user send a turn anyway, so they
+         got "analyze the current screen" with nothing attached and no idea
+         why. Each case names what is missing and where to fix it. -->
+    <string name="a11y_service_label">Minis Accessibility</string>
 </resources>

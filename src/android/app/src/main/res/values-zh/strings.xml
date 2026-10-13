@@ -727,23 +727,15 @@
     <string name="perm_reset_confirm_title">重置所有权限？</string>
     <string name="perm_reset_confirm_text">这将重置所有权限偏好。是否继续？</string>
     <string name="perm_reset_confirm">重置</string>
-    <string name="perm_level_bypass">自动允许</string>
-    <string name="perm_level_ask_once">本次启动询问</string>
-    <string name="perm_level_not_allowed">不允许</string>
     <string name="perm_section_config_tool">配置工具</string>
     <string name="perm_tool_a11y_cli">android-a11y-cli</string>
     <string name="perm_tool_shizuku_cli">android-shizuku-cli</string>
-    <string name="perm_section_a11y">无障碍</string>
-    <string name="perm_section_shizuku">Shizuku</string>
-    <string name="perm_a11y_section_footer">android-a11y-cli 让 Agent 读取屏幕 UI、模拟点击与输入、监听系统事件。下方两项都需配置:选择 Agent 权限,并在系统设置启用无障碍服务。</string>
-    <string name="perm_shizuku_section_footer">android-shizuku-cli 通过 Shizuku 服务调用 Android 高权限 API(安装应用、settings put、强制停止等)。Shizuku 由无线 ADB 或 root 启动。下方两项都需配置。</string>
     <string name="perm_a11y_cli_description">让 Agent 读取屏幕、点击、输入、监听事件</string>
-    <string name="perm_shizuku_cli_description">通过 Shizuku 调用 Android 高权限 API</string>
-    <string name="perm_a11y_open_settings">前往无障碍设置</string>
+    <!-- [T-android-sandbox-only] 特权与集成：root 后端。 -->
+    <string name="perm_root_cli_title">Root（超级用户）</string>
+    <string name="perm_root_cli_description">通过超级用户授权（UID 0）执行系统命令，需要 Magisk 或 KernelSU</string>
     <string name="perm_system_authorization">系统授权</string>
     <string name="perm_agent_policy">Agent 权限</string>
-    <string name="perm_a11y_system_ready">已启用</string>
-    <string name="perm_a11y_system_disabled">未启用</string>
     <string name="perm_allow_minis_config">允许 minis-config</string>
     <string name="perm_minis_config_desc">禁用后，Agent 将无法通过 minis-config 读取或修改任何设置。日志 → 配置变更 中的变更历史仍可查看。Agent 会收到 permission_denied 错误，并通过深度链接引导你操作。</string>
     <string name="perm_section_privacy">隐私</string>
@@ -815,7 +807,8 @@
     <string name="shizuku_grant_btn">授权 Minis</string>
     <string name="shizuku_grant_subtitle">弹出授权对话框</string>
     <string name="perm_section_privileged_backend">特权后端</string>
-    <string name="perm_privileged_cli_description">允许 Agent 通过特权后端（Shizuku 或 AXManager）执行 ADB 级系统命令</string>
+    <string name="perm_section_files">文件工具</string>
+    <string name="perm_files_footer">这三项决定的是 Agent 能否读取或写入 /data 下「其他应用的私有文件」。工作区、记忆、共享目录的访问始终允许。写系统分区是无条件拒绝的、开关也打不开——这是防止一条误操作刷砖的最后一道线。</string>
     <string name="skill_title">技能</string>
     <string name="skill_add">添加 Skill</string>
     <string name="skill_section_installed">已安装</string>
@@ -1668,7 +1661,6 @@
     <string name="system_permissions_a11y_restricted_shizuku_sub">一键解除，无需离开 Minis</string>
     <string name="system_permissions_a11y_restricted_working">正在解除…</string>
     <string name="system_permissions_a11y_restricted_failed">解除失败 — 请按下方步骤手动操作</string>
-    <string name="a11y_service_label">Minis 无障碍</string>
     <string name="a11y_service_description">让 Minis 代表调用 android-a11y-cli 的 Agent 读取屏幕 UI 结构、执行点击与手势，并接收系统事件。</string>
     <string name="a11y_service_summary">Minis 的 UI 层自动化后端</string>
     <string name="back">返回</string>
@@ -2111,44 +2103,44 @@
     <string name="rootfs_dns_effective_system">当前生效：系统 DNS</string>
     <string name="rootfs_dns_effective_custom">当前生效：%1$s</string>
 
-    <!-- Screen perception assistant and resident notification -->
-    <string name="tile_screen_assistant_label">屏幕助手</string>
-    <string name="screen_assistant_title">屏幕感知助手</string>
-    <string name="screen_assistant_capturing">正在感知当前屏幕…</string>
-    <string name="screen_assistant_captured_badge">已捕获当前屏幕</string>
-    <string name="screen_assistant_text_extracted">已识别页面文字 %1$d 字符</string>
-    <string name="screen_assistant_a11y_missing_title">无障碍服务未启用</string>
-    <string name="screen_assistant_a11y_missing_desc">启用 Minis 无障碍服务可自动获取当前屏幕截图与界面文字。</string>
-    <string name="screen_assistant_default_prompt">分析当前页面内容</string>
-    <string name="screen_assistant_action_summarize">📌 总结页面要点</string>
-    <string name="screen_assistant_action_translate">🔤 翻译页面内容</string>
-    <string name="screen_assistant_action_extract">🔍 提取关键信息</string>
-    <string name="screen_assistant_action_explain">💡 解释分析内容</string>
-    <string name="screen_assistant_input_placeholder">对当前页面输入你的需求…</string>
-    <string name="resident_notification_title">Minis 随身助手</string>
-    <string name="resident_notification_desc">随时唤出 · 点击基于当前屏幕提问</string>
-    <string name="resident_action_screen">屏幕提问</string>
-    <string name="resident_action_voice">语音提问</string>
-    <string name="resident_action_main">打开应用</string>
-    <string name="settings_resident_assistant">通知栏常驻助手</string>
-    <string name="settings_resident_assistant_footer">在通知栏常驻助手卡片，随时下滑即可一键感知当前屏幕并向 Agent 提问。</string>
-    <string name="settings_resident_assistant_footer_no_a11y">助手常驻已开启。建议在系统设置中启用无障碍服务，以自动截取当前屏幕和文字。</string>
-
     <!-- Execution Environment Settings -->
-    <string name="settings_execution_environment">执行环境</string>
-    <string name="settings_execution_environment_subtitle">选择 Agent 命令行执行载体 (沙盒 / 宿主 / Shizuku / Root)</string>
-    <string name="exec_env_header">命令行执行环境</string>
-    <string name="exec_env_footer">选择 Agent 执行 shell_execute 命令的宿主环境。Root 与宿主模式将直接操作真实 Android 系统。</string>
-    <string name="exec_env_sandbox_title">内置沙盒模式 (PRoot Alpine)</string>
-    <string name="exec_env_sandbox_desc">独立隔离的 Linux 容器，安全稳定，不影响手机系统环境。</string>
-    <string name="exec_env_host_title">Android 宿主系统 Shell</string>
-    <string name="exec_env_host_desc">标准 Android 用户态终端 (/system/bin/sh)，可调用 am、pm 与外部共享存储 (/sdcard)。</string>
-    <string name="exec_env_shizuku_title">Shizuku (ADB 系统特权)</string>
-    <string name="exec_env_shizuku_desc">利用 Shizuku 获取 ADB 特权 (UID 2000)。支持免 Root 系统控制、模拟输入与静默管理应用。</string>
-    <string name="exec_env_root_title">Root 特权模式 (Superuser / su)</string>
-    <string name="exec_env_root_desc">持有最高 UID 0 权限。可接管内核设备节点、访问应用私有数据与底层配置。仅限极客。</string>
-    <string name="exec_env_root_warning_title">确定开启 Root 超级用户模式？</string>
-    <string name="exec_env_root_warning_message">开启后 Agent 将通过 su 获取设备的完全控制权（UID 0），可以对系统文件执行任意更改。请确保你信任该 Agent 以及你发出的指令。</string>
-    <string name="exec_env_root_not_detected">未在设备上检测到 su 执行文件或 Root 授权失败。</string>
-    <string name="exec_env_shizuku_not_ready">Shizuku 服务未运行或尚未授权 Minis。</string>
+
+    <!-- [T-android-permissions-redesign] 新版布局 -->
+    <string name="perm_privileged_footer">这三项出厂是关闭的，也是唯一需要你做决定、Agent 才能碰到设备的能力。</string>
+    <string name="perm_section_your_changes">你改过的</string>
+    <string name="perm_no_restrictions">没有额外限制</string>
+    <string name="perm_no_restrictions_sub">所有能力都保持在出厂默认值</string>
+    <string name="perm_section_data">隐私数据</string>
+    <string name="perm_data_footer">日历、位置、通讯录、相册、剪贴板。Android 首次使用时仍会自己弹窗；这里的开关决定的是「拿到授权之后，Agent 允不允许用」。</string>
+    <string name="perm_section_more">更多</string>
+    <string name="perm_more_footer">文件访问与配置工具。</string>
+    <string name="perm_section_system_grants">系统授权</string>
+    <string name="perm_system_grants_footer">会挡住功能、必须修一下的 Android 权限。一切正常时这里不会出现任何条目。</string>
+    <string name="perm_system_grants_ok">系统授权正常</string>
+    <string name="perm_all_healthy_sub">这里没有需要处理的东西</string>
+    <string name="perm_group_default">%1$d 项能力，全部为默认值</string>
+    <string name="perm_group_customised">%1$d 项能力，其中 %2$d 项被你改过</string>
+    <string name="perm_ask_each_time">每次先问我</string>
+    <string name="perm_ask_each_time_sub">Agent 使用前先停下来问你。不开这个，Agent 会直接用。</string>
+    <string name="perm_state_on">已开启</string>
+    <string name="perm_state_off">已关闭</string>
+    <string name="perm_state_not_running">未运行</string>
+    <string name="perm_state_not_installed">未安装</string>
+    <string name="perm_root_status">su</string>
+    <string name="perm_root_cli_sub">通过超级用户授权以 UID 0 执行命令，需要 Magisk 或 KernelSU。</string>
+    <string name="perm_shizuku_cli_sub">通过 Shizuku 执行命令。装 Sui 的话拿到的是 UID 0，而不是 ADB shell 的普通权限。</string>
+    <string name="perm_a11y_cli_sub">让 Agent 读取屏幕并操作系统界面。在没有 root 之前，这是唯一可用的截屏路径。</string>
+    <string name="perm_tool_read">读取文件</string>
+    <string name="perm_tool_write">写入文件</string>
+    <string name="perm_tool_edit">编辑文件</string>
+    <string name="perm_tool_read_sub">读取其他应用的私有文件前询问</string>
+    <string name="perm_tool_write_sub">写入其他应用的私有文件前询问</string>
+    <string name="perm_tool_edit_sub">编辑其他应用的私有文件前询问</string>
+    <string name="perm_denied_privileged">%1$s 已关闭。去 Minis 设置 → 权限 打开它。</string>
+    <string name="perm_denied_root">Root 已关闭。去 Minis 设置 → 权限 里打开 Root。你还需要一个超级用户授权（Magisk 或 KernelSU），并接受它的弹窗。</string>
+    <string name="perm_denied_shizuku">Shizuku 已关闭。去 Minis 设置 → 权限 打开它。它还需要 Shizuku 服务正在运行。</string>
+    <string name="perm_denied_a11y">无障碍控制已关闭。去 Minis 设置 → 权限 打开它，然后在系统「无障碍」里开启 Minis 服务。</string>
+
+    <!-- [T-android-screen-perception] 失败提示 -->
+    <string name="a11y_service_label">Minis 无障碍服务</string>
 </resources>

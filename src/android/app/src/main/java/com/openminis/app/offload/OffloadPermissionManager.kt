@@ -88,6 +88,27 @@ object OffloadPermissionManager {
         // is already authorized.
         ToolPermissionInfo("a11y_cli", "android-a11y-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.NOT_ALLOWED),
         ToolPermissionInfo("shizuku_cli", "android-shizuku-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.NOT_ALLOWED),
+        // [T-android-sandbox-only] The root backend. NOT_ALLOWED out of the
+        // box, and deliberately in the same category as shizuku_cli: before
+        // the execution-environment rework, `su -c <anything>` was one pref
+        // away from shell_execute and needed no permission at all. Now it is
+        // gated like every other privileged path, which is the only boundary
+        // this kernel can offer — `su` inside a mount namespace keeps its full
+        // capability set, so confinement has to live at this surface.
+        ToolPermissionInfo("root_cli", "android-root-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.NOT_ALLOWED),
+        // [T-android-sandbox-only] The file tools now resolve on the host, so
+        // they carry the same reach as any other host write. They default to
+        // BYPASS for the same reason the CLI above defaults to BYPASS: this app
+        // is built to run unattended (scheduled tasks fire while the phone sits
+        // on a desk), and checkPermission() suspends until someone answers a
+        // dialog. A prompt nobody is there to answer would wedge the turn, so
+        // the default path must not prompt. A user who wants a wall in front of
+        // agent file writes downgrades these to ASK_ONCE in Settings and gets
+        // one; the always-on protection is FileToolGuard's protected-path
+        // refusal, which never blocks on anything.
+        ToolPermissionInfo("read", "Read files", PermissionCategory.SYSTEM, PermissionLevel.BYPASS, showInSettings = true),
+        ToolPermissionInfo("write", "Write files", PermissionCategory.SYSTEM, PermissionLevel.BYPASS, showInSettings = true),
+        ToolPermissionInfo("edit", "Edit files", PermissionCategory.SYSTEM, PermissionLevel.BYPASS, showInSettings = true),
     )
 
     /** Stable session-id used by NativeOffloadHandlers when calling
@@ -307,22 +328,52 @@ object OffloadPermissionManager {
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences("offload_permissions", Context.MODE_PRIVATE)
+        publishLevels()
+    }
+
+    /**
+     * The permission levels, as state.
+     *
+     * The settings screen used to read `prefs` inside a `remember {}` per row:
+     * a synchronous SharedPreferences hit on the UI thread, on every
+     * recomposition, and never refreshed when anything else changed a level —
+     * `resetAll()` from the toolbar left every row showing the old value until
+     * the screen was recreated. Publishing a single map instead means the UI
+     * observes it, and `checkPermission` keeps its cheap direct read because it
+     * runs on an IPC thread where a Map lookup matters more than a Compose
+     * subscription.
+     */
+    private val _levels = MutableStateFlow<Map<String, PermissionLevel>>(emptyMap())
+    val levels: StateFlow<Map<String, PermissionLevel>> = _levels.asStateFlow()
+
+    private fun publishLevels() {
+        _levels.value = toolRegistry.associate { it.toolName to readLevel(it) }
+    }
+
+    /** Read one level straight from prefs. No state, no main-thread concerns. */
+    private fun readLevel(info: ToolPermissionInfo): PermissionLevel {
+        val stored = prefs.getString("level_${info.toolName}", null)
+        if (stored != null) {
+            return try { PermissionLevel.valueOf(stored) } catch (_: Exception) { info.defaultLevel }
+        }
+        return info.defaultLevel
     }
 
     fun getLevel(toolName: String): PermissionLevel {
         val info = toolRegistry.find { it.toolName == toolName }
             ?: return PermissionLevel.BYPASS // Unknown tools are bypassed
+        return readLevel(info)
+    }
 
-        val stored = prefs.getString("level_$toolName", null)
-        return if (stored != null) {
-            try { PermissionLevel.valueOf(stored) } catch (_: Exception) { info.defaultLevel }
-        } else {
-            info.defaultLevel
-        }
+    /** True when the user has moved this tool away from its shipped default. */
+    fun isCustomised(toolName: String): Boolean {
+        val info = toolRegistry.find { it.toolName == toolName } ?: return false
+        return prefs.contains("level_$toolName") && getLevel(toolName) != info.defaultLevel
     }
 
     fun setLevel(toolName: String, level: PermissionLevel) {
         prefs.edit().putString("level_$toolName", level.name).apply()
+        publishLevels()
     }
 
     fun resetAll() {
@@ -331,6 +382,7 @@ object OffloadPermissionManager {
             editor.remove("level_${tool.toolName}")
         }
         editor.apply()
+        publishLevels()
     }
 
     /**
