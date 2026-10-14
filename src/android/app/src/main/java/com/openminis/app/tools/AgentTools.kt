@@ -59,8 +59,10 @@ object AgentTools {
         add(FileWriteTool.definition())
         add(FileEditTool.definition())
         if (browserEnabled) add(browserUseDefinition())
-        if (screenEnabled) add(ScreenTool.definition())
-        add(AndroidTool.definition())
+        if (screenEnabled) {
+            add(ScreenTool.viewDefinition())
+            add(ScreenTool.touchDefinition())
+        }
         if (memoryEnabled) add(memoryDefinition())
         if (!isHelper && delegateEnabled) {
             add(subAgentTaskDefinition(rosterNames))
@@ -148,22 +150,21 @@ object AgentTools {
     private fun shellExecuteDefinition(): AgentToolDefinition =
         AgentToolDefinition(
             name = ToolNames.BASH,
-            description = "Execute a shell command in the Alpine Linux sandbox. " +
-                "Runs via /bin/sh -c with stdout and stderr merged. Each invocation is a fresh " +
-                "process — there is no shared terminal session. Output is truncated; the full text " +
-                "is saved to a file whose path is returned when that happens. " +
-                "The sandbox has no access to the host Android system: for am/pm/settings, " +
-                "notifications, and privileged work use the `android` tool instead.",
+            description = "Execute a shell command. By default (as_root=false), runs in the isolated Alpine Linux container. " +
+                "When as_root=true, runs on the Android host with superuser privileges (UID 0 / su) to access system properties, " +
+                "pm/am, full /data, and hardware diagnostics. " +
+                "Output is truncated; long outputs are saved to a file.",
             parameters = mapOf(
-                "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'Install Python data analysis packages', 'List files in home directory'). Use the same language as the user."),
+                "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user (e.g. 'Install Python packages' or 'Check battery status as root'). Use the same language as the user."),
                 "command" to AgentToolParam("string", "The shell command to execute. Supports multi-line commands directly — no special escaping needed. Keep under 1000 chars; for longer scripts, write to a file with file_write first, then run it."),
+                "as_root" to AgentToolParam("boolean", "If true, executes the command on the Android host with Root privileges (UID 0 / su). If false (default), executes inside the Alpine Linux sandbox."),
                 // [T-android-parity-fixes] State the ceiling. It used to say only "use
                 // a larger value" while values above 900 were silently cut to 900.
                 "timeout" to AgentToolParam("integer", "Timeout in seconds (default: 900, maximum: 3600 — larger values are capped at 3600). Use a larger value for long-running commands like package installs."),
                 "delay" to AgentToolParam("integer", "Delay in seconds before execution begins. The tool blocks the agent flow during this wait WITHOUT occupying the shell, so other concurrent tasks can use it. Use this instead of sleep commands to avoid resource contention."),
             ),
             required = listOf("tool_title", "command"),
-            propertyOrdering = listOf("tool_title", "command", "timeout", "delay"),
+            propertyOrdering = listOf("tool_title", "command", "as_root", "timeout", "delay"),
         )
 
     // Aligned with iOS AIChatViewModel.swift browser_use definition

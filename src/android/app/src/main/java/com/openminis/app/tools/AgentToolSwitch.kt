@@ -51,7 +51,7 @@ enum class AgentToolSwitch(val key: String, val defaultValue: Boolean) {
             // subagent_task/delegate_task/agent_status into `subagent`, so a
             // replayed call from an older transcript is still governed.
             ToolNames.SUBAGENT -> AGENTS
-            ToolNames.SCREEN -> SCREEN
+            ToolNames.SCREEN, ToolNames.SCREEN_VIEW, ToolNames.SCREEN_TOUCH -> SCREEN
             else -> null
         }
 

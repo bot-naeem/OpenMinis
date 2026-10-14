@@ -78,14 +78,73 @@ object ScreenTool {
         propertyOrdering = listOf("tool_title", "action", "x", "y", "to_x", "to_y", "direction", "text", "key", "duration_ms", "settle_ms", "capture_after", "backend"),
     )
 
-    fun execute(argsJson: String, sessionId: String?, context: Context): ToolExecutionResult {
+    fun viewDefinition(): AgentToolDefinition = AgentToolDefinition(
+        name = ToolNames.SCREEN_VIEW,
+        description = "Take a screenshot of the physical Android device screen and return the visual image directly to the model. " +
+            "Use this to perceive the current UI state before deciding touch actions. " +
+            "Supports Root, Shizuku, and AccessibilityService backends automatically.",
+        parameters = mapOf(
+            "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+            "delay_ms" to AgentToolParam("integer", "Optional delay in milliseconds before taking screenshot to let animations or page loading settle (default: 0)."),
+            "max_edge" to AgentToolParam("integer", "Maximum dimension in pixels for image scaling (default: 1280). Keeps visual detail within model context limits."),
+            "quality" to AgentToolParam("integer", "JPEG compression quality from 10 to 100 (default: 80)."),
+            "backend" to AgentToolParam("string", "Explicit backend to use ('auto', 'root', 'shizuku', 'a11y'). Default is 'auto'.", enumValues = listOf("auto", "root", "shizuku", "a11y")),
+        ),
+        required = listOf("tool_title"),
+        propertyOrdering = listOf("tool_title", "delay_ms", "max_edge", "quality", "backend"),
+    )
+
+    fun touchDefinition(): AgentToolDefinition = AgentToolDefinition(
+        name = ToolNames.SCREEN_TOUCH,
+        description = "Perform physical touch, swipe, keyboard typing, or system key actions on the physical Android device screen. " +
+            "Coordinates x, y, to_x, to_y use normalized 0~1000 scale (0,0 is top-left, 1000,1000 is bottom-right). " +
+            "Set `capture_after: true` on any touch action to immediately capture and return the updated screen in the same turn. " +
+            "Supports Root, Shizuku, and AccessibilityService backends automatically.",
+        parameters = mapOf(
+            "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+            "action" to AgentToolParam("string", "What touch action to perform on the screen",
+                enumValues = listOf("tap", "double_tap", "long_press", "swipe", "scroll", "type", "key", "wait")),
+            "x" to AgentToolParam("integer", "X coordinate (0~1000 normalized, where 0 is left edge and 1000 is right edge) for tap, double_tap, long_press, or swipe start."),
+            "y" to AgentToolParam("integer", "Y coordinate (0~1000 normalized, where 0 is top edge and 1000 is bottom edge) for tap, double_tap, long_press, or swipe start."),
+            "to_x" to AgentToolParam("integer", "Target X coordinate (0~1000 normalized) for swipe."),
+            "to_y" to AgentToolParam("integer", "Target Y coordinate (0~1000 normalized) for swipe."),
+            "direction" to AgentToolParam("string", "Scroll direction for scroll action", enumValues = listOf("up", "down", "left", "right")),
+            "text" to AgentToolParam("string", "Text to type into focused field for type action."),
+            "key" to AgentToolParam("string", "Key name for key action: 'back', 'home', 'recents', 'enter', 'delete', 'volume_up', 'volume_down', 'power' (or Android keycode integer)."),
+            "duration_ms" to AgentToolParam("integer", "Duration in milliseconds for swipe, long_press, or wait action (default: 300 for swipe, 800 for long_press, 1000 for wait)."),
+            "settle_ms" to AgentToolParam("integer", "Delay in milliseconds after touch action to let Android UI finish transition animations before returning (default: 400ms)."),
+            "capture_after" to AgentToolParam("boolean", "If true, automatically captures the screen after executing the action (after settle delay) and returns the screenshot image in this turn."),
+            "backend" to AgentToolParam("string", "Explicit backend to use ('auto', 'root', 'shizuku', 'a11y'). Default is 'auto' (picks best available).", enumValues = listOf("auto", "root", "shizuku", "a11y")),
+        ),
+        required = listOf("tool_title", "action"),
+        propertyOrdering = listOf("tool_title", "action", "x", "y", "to_x", "to_y", "direction", "text", "key", "duration_ms", "settle_ms", "capture_after", "backend"),
+    )
+
+    fun executeView(argsJson: String, sessionId: String?, context: Context): ToolExecutionResult {
         val o = try {
             JSONObject(argsJson)
         } catch (e: Exception) {
-            return ToolExecutionResult("Error: invalid JSON in screen arguments: ${e.message}", false)
+            return ToolExecutionResult("Error: invalid JSON in screen_view arguments: ${e.message}", false)
         }
 
-        val toolTitle = o.optString("tool_title", "Screen Action")
+        val toolTitle = o.optString("tool_title", "Screen View")
+        val delayMs = o.optLong("delay_ms", 0L).coerceIn(0L, 10_000L)
+        val maxEdge = o.optInt("max_edge", DEFAULT_MAX_EDGE)
+        val quality = o.optInt("quality", DEFAULT_JPEG_QUALITY)
+        val backendPref = o.optString("backend", "auto").trim().lowercase()
+
+        if (delayMs > 0) sleepQuietly(delayMs)
+        return executeCapture(context, sessionId, maxEdge, quality, backendPref, toolTitle)
+    }
+
+    fun executeTouch(argsJson: String, sessionId: String?, context: Context): ToolExecutionResult {
+        val o = try {
+            JSONObject(argsJson)
+        } catch (e: Exception) {
+            return ToolExecutionResult("Error: invalid JSON in screen_touch arguments: ${e.message}", false)
+        }
+
+        val toolTitle = o.optString("tool_title", "Screen Touch")
         val action = o.optString("action", "").trim().lowercase()
         val backendPref = o.optString("backend", "auto").trim().lowercase()
         val settleMs = o.optLong("settle_ms", DEFAULT_SETTLE_MS).coerceIn(0L, 5000L)
@@ -99,15 +158,43 @@ object ScreenTool {
             )
         }
 
+        if (action == "capture" || action == "screenshot") {
+            val maxEdge = o.optInt("max_edge", DEFAULT_MAX_EDGE)
+            val quality = o.optInt("quality", DEFAULT_JPEG_QUALITY)
+            return executeCapture(context, sessionId, maxEdge, quality, backendPref, toolTitle)
+        }
+
+        return dispatchTouchAction(o, action, toolTitle, backendPref, settleMs, captureAfter, sessionId, context)
+    }
+
+    fun execute(argsJson: String, sessionId: String?, context: Context): ToolExecutionResult {
+        val o = try {
+            JSONObject(argsJson)
+        } catch (e: Exception) {
+            return ToolExecutionResult("Error: invalid JSON in screen arguments: ${e.message}", false)
+        }
+
+        val action = o.optString("action", "").trim().lowercase()
+        return if (action == "capture" || action == "screenshot" || (!o.has("action") && o.has("delay_ms"))) {
+            executeView(argsJson, sessionId, context)
+        } else {
+            executeTouch(argsJson, sessionId, context)
+        }
+    }
+
+    private fun dispatchTouchAction(
+        o: JSONObject,
+        action: String,
+        toolTitle: String,
+        backendPref: String,
+        settleMs: Long,
+        captureAfter: Boolean,
+        sessionId: String?,
+        context: Context,
+    ): ToolExecutionResult {
         val (screenW, screenH) = getDisplayBounds(context)
 
         return when (action) {
-            "capture", "screenshot" -> {
-                val maxEdge = o.optInt("max_edge", DEFAULT_MAX_EDGE)
-                val quality = o.optInt("quality", DEFAULT_JPEG_QUALITY)
-                executeCapture(context, sessionId, maxEdge, quality, backendPref, toolTitle)
-            }
-
             "tap", "click" -> {
                 val rawX = if (o.has("x")) o.getInt("x") else null
                 val rawY = if (o.has("y")) o.getInt("y") else null

@@ -13199,6 +13199,18 @@ class ChatViewModel(
                 } else {
                     toolDisabledResult(ToolNames.SCREEN)
                 }
+            ToolNames.SCREEN_VIEW ->
+                if (com.openminis.app.tools.AgentToolSwitch.SCREEN.isEnabled(context)) {
+                    com.openminis.app.tools.ScreenTool.executeView(argsJson, fsSessionId, context)
+                } else {
+                    toolDisabledResult(ToolNames.SCREEN_VIEW)
+                }
+            ToolNames.SCREEN_TOUCH ->
+                if (com.openminis.app.tools.AgentToolSwitch.SCREEN.isEnabled(context)) {
+                    com.openminis.app.tools.ScreenTool.executeTouch(argsJson, fsSessionId, context)
+                } else {
+                    toolDisabledResult(ToolNames.SCREEN_TOUCH)
+                }
             // [T-android-tool-surface] memory_write + memory_get are one tool.
             // `content` present means write, absent means search — the two old
             // schemas had no other argument in common, so presence is the whole
@@ -14306,8 +14318,49 @@ class ChatViewModel(
             // resolves to the persisted id once `ensureSession()` has run, so
             // every shell runs in a directory that survives VM recreation.
             val dispatchSessionId = activeSessionId
+            val asRoot = args.optBoolean("as_root", false)
             android.util.Log.w("ShellExecDiag",
-                "executeShell dispatch=$dispatchSessionId rawSessionId=$sessionId realSessionId=$realSessionId isDraft=$isDraft cmd=${command.take(120).replace('\n', ' ')}")
+                "executeShell dispatch=$dispatchSessionId rawSessionId=$sessionId realSessionId=$realSessionId asRoot=$asRoot isDraft=$isDraft cmd=${command.take(120).replace('\n', ' ')}")
+
+            if (asRoot) {
+                val idx = toolBlocks.indexOfFirst { it.id == toolId }
+                if (idx >= 0) {
+                    val preview = command.take(60).replace('\n', ' ')
+                    toolBlocks[idx] = toolBlocks[idx].copy(content = "⚡ Running root command: $preview...")
+                    withContext(Dispatchers.Main) {
+                        updateAssistantMessage(assistantId, currentText, true, toolBlocks)
+                    }
+                }
+
+                val handler = com.openminis.app.sandbox.NativeOffloadServer.handlerFor("android-root-cli")
+                    ?: com.openminis.app.sandbox.offload.RootOffloadHandler(context)
+                val req = com.openminis.app.sandbox.NativeOffloadRequest(
+                    pid = android.os.Process.myPid(),
+                    argv = listOf("android-root-cli", command, "--timeout-ms", (timeoutSec * 1000L).toString()),
+                    env = emptyMap(),
+                    cwd = "",
+                    sessionId = dispatchSessionId ?: fsSessionId ?: "",
+                )
+
+                val offloadRes = withContext(Dispatchers.IO) {
+                    handler.handle(req)
+                }
+
+                val rootIdx = toolBlocks.indexOfFirst { it.id == toolId }
+                if (rootIdx >= 0) {
+                    val trimmed = offloadRes.output.lines().takeLast(50).joinToString("\n")
+                    toolBlocks[rootIdx] = toolBlocks[rootIdx].copy(content = trimmed)
+                    withContext(Dispatchers.Main) {
+                        updateAssistantMessage(assistantId, currentText, true, toolBlocks)
+                    }
+                }
+
+                return ToolExecutionResult(
+                    output = offloadRes.output,
+                    success = offloadRes.exitCode == 0,
+                    toolTitle = toolTitle,
+                )
+            }
 
             // [T-bash-on-demand] Detect busybox-ash-incompatible bash syntax and,
             // if found, transparently install + switch to bash. Install time is
@@ -15251,7 +15304,9 @@ Memory system (currently DISABLED):
         val base = identitySection + """You should proactively use shell commands to accomplish the user's tasks — installing packages (apk add), writing and running scripts, managing files, networking, and any other operations a Linux terminal can perform.
 
 Available tools:
-- shell_execute: Run any shell command. Each invocation is an isolated process with stdout/stderr captured. Prefer this for most tasks — it is a real Linux environment with persistent filesystem. Common tools (python3, pip, curl, wget, git, ssh, etc.) can be installed via apk add; Python packages via pip install. Use `which <cmd>` to check if a tool is already installed before running apk add — many packages persist across sessions. When you need to wait before checking results (e.g. polling, waiting for a process), use the `delay` parameter instead of `sleep` in the command — delay blocks the agent flow without occupying the shell, so other concurrent tasks can use it during the wait. This avoids resource contention. Execution discipline for long-running or dispatched work: make tool calls immediately instead of describing intentions, and keep working until the task is complete. Within a turn, `delay` is your wait mechanism — to follow up on something still running, chain delay-then-check calls at a task-appropriate interval until you have the result or hit a sensible retry cap. For a check that should happen AFTER this turn ends, register it by running `minis-scheduled create …` via shell_execute (see the CLI list) — it fires a new turn at the scheduled time through a system alarm. NEVER end a turn with a promise of future action: 'I'll keep monitoring', 'will sync the result later', and ending right after a single still-running status check with 'let's keep waiting' are all the same violation — once your turn ends, NOTHING runs until the user's next message. If polling to completion is genuinely not worth blocking the turn, close honestly instead: either register a `minis-scheduled` follow-up (say so, with its task id) or state that you will only learn the outcome when the user next messages; see 'Scheduled tasks' later in this prompt.
+- bash: Execute a shell command. By default (as_root=false), runs in the isolated Alpine Linux container. When as_root=true, runs on the Android host with superuser privileges (UID 0 / su) to access system properties, pm/am, full /data, and hardware diagnostics. Delay parameter blocks the agent flow during wait without occupying the shell.
+- screen_view: Take a screenshot of the physical Android device screen and return visual image data directly to perceive the current UI.
+- screen_touch: Perform physical touch, swipe, typing, or key actions (normalized 0~1000 coordinates). Set capture_after=true to immediately capture and verify the updated screen.
 - file_read: Read file contents (faster than cat).
 - file_write: Create new files or overwrite existing files (faster than echo/tee).
 - file_edit: Edit existing files with exact string replacement (old_string → new_string). Preferred over file_write for modifications — always file_read first.
@@ -15308,9 +15363,8 @@ Tone and style:
 - Be concise. Prefer action over explanation — when the user asks for something that can be done via shell, do it directly.
 
 Execution environment:
-- You run shell commands in an isolated Alpine Linux container (PRoot). Use Alpine's apk for package management, and access workspace via /var/minis. ICMP is blocked.
-- The sandbox has NO access to the host Android system. `am`, `pm`, `settings`, `dumpsys`, `/sdcard` and anything privileged are not reachable from a shell command — use the `android` tool for those. If you find yourself wanting a host command, that is the signal to call `android` instead.
-- Privileged host access (root / ADB-shell) is only ever reached through the `android` tool's `root` and `shizuku` actions, which are permission-gated. If one returns permission_denied, relay the message and point the user at [Settings → Permissions](minis://settings/permissions) — do not retry.
+- Shell commands run in an isolated Alpine Linux container (PRoot) by default. Use Alpine's apk for package management, and access workspace via /var/minis. ICMP is blocked.
+- For host Android operations (am, pm, settings, dumpsys, reading /data or hardware control), pass `as_root: true` to `bash` to execute as superuser (UID 0 / su) on the host. Root execution is protected by RootCommandGuard and permission-gated. If root permission is denied, point the user at [Settings → Permissions](minis://settings/permissions) — do not retry.
 
 Android reference documentation:
 Device and privileged operations go through the `android` tool (see its description for

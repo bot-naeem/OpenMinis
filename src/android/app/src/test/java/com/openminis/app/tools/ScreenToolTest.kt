@@ -25,6 +25,32 @@ class ScreenToolTest {
     }
 
     @Test
+    fun `viewDefinition exposes screen_view tool with proper schema`() {
+        val def = ScreenTool.viewDefinition()
+        assertEquals(ToolNames.SCREEN_VIEW, def.name)
+        assertTrue(def.required.contains("tool_title"))
+        assertTrue(def.parameters.containsKey("delay_ms"))
+        assertTrue(def.parameters.containsKey("max_edge"))
+        assertTrue(def.parameters.containsKey("quality"))
+        assertTrue(def.parameters.containsKey("backend"))
+    }
+
+    @Test
+    fun `touchDefinition exposes screen_touch tool with proper schema`() {
+        val def = ScreenTool.touchDefinition()
+        assertEquals(ToolNames.SCREEN_TOUCH, def.name)
+        assertTrue(def.required.contains("tool_title"))
+        assertTrue(def.required.contains("action"))
+
+        val actionParam = def.parameters["action"]
+        assertNotNull(actionParam)
+        val expectedActions = listOf("tap", "double_tap", "long_press", "swipe", "scroll", "type", "key", "wait")
+        assertTrue(actionParam!!.enumValues!!.containsAll(expectedActions))
+        assertTrue(def.parameters.containsKey("capture_after"))
+        assertTrue(def.parameters.containsKey("settle_ms"))
+    }
+
+    @Test
     fun `normalizeCoords maps 0 to 1000 scale to physical screen pixels`() {
         val screenW = 1080
         val screenH = 2400
