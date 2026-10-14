@@ -29,7 +29,7 @@ class RootOffloadHandler(private val context: Context) : NativeOffloadHandler {
     override fun handle(request: NativeOffloadRequest): NativeOffloadResult {
         val argv = request.argv.drop(1)
         val args = OffloadArgs(argv)
-        val command = args.positional.joinToString(" ").trim()
+        val command = extractRootCommand(argv)
 
         if (command.isEmpty() || command == "--help" || command == "-h" ||
             command == "help" || command == "--version"
@@ -179,4 +179,45 @@ class RootOffloadHandler(private val context: Context) : NativeOffloadHandler {
             [Settings -> Permissions] (off by default).
         """.trimIndent()
     }
+}
+
+/** Long options this CLI consumes itself; anything else belongs to the command. */
+private val ROOT_VALUE_OPTS = setOf("timeout-ms")
+
+/**
+ * Join argv back into the shell command, verbatim, minus the options the CLI
+ * owns for itself.
+ *
+ * `OffloadArgs.positional` is the wrong source here. That parser is built for the
+ * `android-*` flag surface, where a token starting with a single `-` is a flag —
+ * so `ls -la /data` would come back as `ls /data` with `-la` silently dropped,
+ * and `logcat -d`, `readelf -l`, `ps -A` would lose their options too. Every
+ * handler that runs a *command* rather than a flag grammar needs this instead.
+ *
+ * Only `--timeout-ms <n>` (value-bearing) and the boolean output flags
+ * `--compact`/`--quiet`/`-q` are stripped. All other tokens, single-dash flags
+ * included, are joined back in order. Quoted fragments survive because the caller
+ * split them on whitespace and this rejoins with single spaces.
+ */
+internal fun extractRootCommand(argv: List<String>): String {
+    val kept = mutableListOf<String>()
+    var i = 0
+    while (i < argv.size) {
+        val a = argv[i]
+        when {
+            a.startsWith("--") -> {
+                val body = a.substring(2)
+                val key = body.substringBefore('=')
+                when {
+                    key in ROOT_VALUE_OPTS -> if (!body.contains('=')) i++ // drop the value token
+                    key in OffloadOutput.OUTPUT_FLAGS -> Unit // boolean, nothing to drop
+                    else -> kept.add(a) // a long flag belonging to the command
+                }
+            }
+            a == "-q" -> Unit // ours, see OUTPUT_FLAGS
+            else -> kept.add(a) // -la, -d, /paths, quoted fragments, ...
+        }
+        i++
+    }
+    return kept.joinToString(" ").trim()
 }

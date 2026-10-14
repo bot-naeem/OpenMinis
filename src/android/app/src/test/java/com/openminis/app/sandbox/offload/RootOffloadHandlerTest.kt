@@ -16,17 +16,15 @@ class RootOffloadHandlerTest {
     @Test
     fun `root command args are not truncated to first token`() {
         val rawTokens = listOf("ls", "-la", "/data/local/tmp")
-        val args = OffloadArgs(rawTokens)
-        val command = args.positional.joinToString(" ").trim()
+        val command = extractRootCommand(rawTokens)
         assertEquals("ls -la /data/local/tmp", command)
     }
 
     @Test
     fun `root command preserves flags like timeout-ms while keeping positional command intact`() {
         val rawTokens = listOf("cat", "/etc/hosts", "--timeout-ms", "5000")
-        val args = OffloadArgs(rawTokens)
-        val command = args.positional.joinToString(" ").trim()
-        val timeoutMs = args.get("timeout-ms")?.toLongOrNull()
+        val command = extractRootCommand(rawTokens)
+        val timeoutMs = OffloadArgs(rawTokens).get("timeout-ms")?.toLongOrNull()
 
         assertEquals("cat /etc/hosts", command)
         assertEquals(5000L, timeoutMs)
