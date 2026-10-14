@@ -2151,4 +2151,39 @@
 
     <!-- [T-android-screen-perception] 失败提示 -->
     <string name="a11y_service_label">Minis 无障碍服务</string>
+
+    <!-- Root 极客特权与系统自动化控制中心 -->
+    <string name="perm_section_root_privilege">宿主 Root 执行特权 (bash as_root)</string>
+    <string name="perm_section_root_privilege_footer">管理 Android 宿主超级用户指令执行策略。命令以 UID 0 超级权限在宿主执行。</string>
+    <string name="perm_root_policy_ask_session">会话级确认（推荐）</string>
+    <string name="perm_root_policy_ask_session_sub">新会话首次调用 Root 命令时弹出安全确认卡片，确认后整会话免审。</string>
+    <string name="perm_root_policy_always">完全信任（极客免打扰模式）</string>
+    <string name="perm_root_policy_always_sub">自动静默执行合法 Root 命令，不弹窗打断 Agent 自动化流程。</string>
+    <string name="perm_root_policy_disabled">禁用 Root</string>
+    <string name="perm_root_policy_disabled_sub">完全禁止 Agent 调用宿主超级用户特权。</string>
+    <string name="perm_guard_title">防格机安全护栏 (RootCommandGuard)</string>
+    <string name="perm_guard_sub">已启用防护：自动拦截 /dev/block 裸写、系统分区擦除、rm -rf /data 等破坏性危险操作。</string>
+    <string name="perm_guard_active">活跃防护</string>
+    <string name="perm_root_audit_title">Root 执行审计日志</string>
+    <string name="perm_root_audit_sub">查看所有超级用户命令的执行时间、耗时、退出码及拦截记录。</string>
+    <string name="perm_section_screen_automation">屏幕感知与自动化 (GUI Automation)</string>
+    <string name="perm_section_screen_automation_footer">管理 screen_view（视觉感知与 SoM 打标）和 screen_touch（手势、按键与人机接管）。</string>
+    <string name="perm_screen_tools_title">屏幕自动化工具</string>
+    <string name="perm_screen_tools_sub">为多模态大模型装配 screen_view 与 screen_touch 视觉感知工具。</string>
+    <string name="perm_pipeline_root_title">Root 截屏与物理注入（优先）</string>
+    <string name="perm_pipeline_root_sub">通过 su 原生截屏与模拟输入，超低延迟无感执行。</string>
+    <string name="perm_pipeline_shizuku_title">Shizuku / Sui Binder 管道</string>
+    <string name="perm_pipeline_shizuku_sub">通过系统 Binder 服务执行提权系统调用与包管理。</string>
+    <string name="perm_pipeline_a11y_title">Minis 无障碍服务（兜底）</string>
+    <string name="perm_pipeline_a11y_sub">用于获取 UI 控件树、绘制 Set-of-Marks 视觉徽标及无感手势模拟。</string>
+    <string name="perm_section_host_storage">宿主文件与存储保护</string>
+    <string name="perm_section_host_storage_footer">管理宿主 /data 目录与共享存储访问。底层系统分区写入受护栏永久保护。</string>
+    <string name="perm_storage_data_title">其他应用私有目录 (/data)</string>
+    <string name="perm_storage_data_sub">Agent 通过 read/write/edit 读写其他应用私有数据前询问。</string>
+    <string name="perm_storage_sdcard_title">外部共享存储 (/sdcard)</string>
+    <string name="perm_storage_sdcard_sub">公共下载、文档与多媒体文件目录。</string>
+    <string name="perm_section_sandbox_browser">沙盒浏览器 (browser_use)</string>
+    <string name="perm_section_sandbox_browser_footer">提供独立的后台无痕浏览器环境，用于检索数据与网页交互，不干扰日常主浏览器。</string>
+    <string name="perm_browser_use_title">沙盒浏览器工具</string>
+    <string name="perm_browser_use_sub">为 Agent 提供专用的网页渲染、DOM 树提取与脚本执行工具。</string>
 </resources>

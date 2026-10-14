@@ -11,19 +11,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Accessibility
 import androidx.compose.material.icons.outlined.BatteryAlert
 import androidx.compose.material.icons.outlined.Build
-import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Contacts
 import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.Folder
-import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material.icons.outlined.LocationOn
+import androidx.compose.material.icons.outlined.FolderShared
 import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Shield
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,9 +36,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.openminis.app.R
 import com.openminis.app.accessibility.A11yState
@@ -51,45 +51,40 @@ import com.openminis.app.offload.OffloadPermissionManager
 import com.openminis.app.offload.OffloadPermissionManager.PermissionLevel
 import com.openminis.app.offload.ShizukuManager
 import com.openminis.app.power.PowerOptimizationManager
+import com.openminis.app.sandbox.RootAccess
+import com.openminis.app.tools.AgentToolSwitch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * [T-android-permissions-redesign] The permissions screen, reorganised around
- * one question: **what can the agent reach that it cannot reach today, and how
- * do I change that?**
+ * System Privilege & Automation Control Center (tailored for rooted Android power users).
  *
- * The previous layout answered a different question — "what is the state of
- * each of eighteen registered capabilities?" — which on a fresh install meant
- * sixteen rows of which thirteen read "Bypass" and needed no decision. Two
- * further things it got wrong:
- *
- *  - It conflated **policy** (may the agent use this) with **grants** (has the
- *    OS given us anything). The two are orthogonal and were rendered in the
- *    same column, so a row could say "Bypass" while Android had long since
- *    revoked the underlying permission.
- *  - `root_cli` had no row at all. It is gated at NOT_ALLOWED by default, so a
- *    user who enabled nothing got `permission_denied` pointing at a page with
- *    nothing to click.
- *
- * The layout follows from the fix: the three capabilities that ship denied get
- * real rows with real status, anything the user has changed away from its
- * default floats to the top of its own group, and the fourteen default-allowed
- * rows collapse behind a single summary line until asked for.
+ * Replaces the legacy 18-row offload permissions with 4 cohesive atomic control domains:
+ * 1. Host Root Privilege (bash as_root policies, RootCommandGuard brick protection, audit logs)
+ * 2. Screen Perception & GUI Automation (screen_view / screen_touch, pipeline status, A11y self-healing)
+ * 3. Host Filesystem & Storage (/data app isolation, /sdcard, minis-config protection)
+ * 4. Sandbox Browser (browser_use web automation isolation)
  */
 @Composable
 fun OffloadPermissionScreen(
     onBack: () -> Unit,
     onOpenPrivilegedBackend: () -> Unit = {},
+    onOpenLogs: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val levels by OffloadPermissionManager.levels.collectAsState()
     val configEnabled by MinisConfigPermissionStore.enabled.collectAsState()
 
-    var showResetConfirm by remember { mutableStateOf(false) }
-    var dataExpanded by remember { mutableStateOf(false) }
-    var advancedExpanded by remember { mutableStateOf(false) }
+    var screenEnabled by remember {
+        mutableStateOf(AgentToolSwitch.SCREEN.isEnabled(context))
+    }
+    var browserEnabled by remember {
+        mutableStateOf(AgentToolSwitch.BROWSER.isEnabled(context))
+    }
+
+    var rootGranted by remember { mutableStateOf(RootAccess.isRootGranted()) }
+    var rootInstalled by remember { mutableStateOf(RootAccess.isRootInstalled()) }
 
     val a11yEnabled by A11yState.isEnabled.collectAsState()
     var a11yConnected by remember { mutableStateOf(MinisAccessibilityService.getInstance() != null) }
@@ -101,6 +96,8 @@ fun OffloadPermissionScreen(
     var repairFailed by remember { mutableStateOf(false) }
     var shizukuReady by remember { mutableStateOf(ShizukuManager.isReady()) }
 
+    var showResetConfirm by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
         A11yState.init(context)
         while (true) {
@@ -108,30 +105,17 @@ fun OffloadPermissionScreen(
             val inSettings = A11yState.isEnabled.value
             val connected = MinisAccessibilityService.getInstance() != null
             a11yConnected = connected
-            // "Revoked" is only claimed once the grant was actually held at
-            // least once — otherwise a first-run user is shown a repair prompt
-            // for something that was never broken.
             a11yRevoked = !inSettings && !connected &&
                 AccessibilityRecoveryManager.hasEverBeenGranted(context)
             a11yRestricted = !inSettings && RestrictedSettingsManager.isRestricted(context)
             shizukuReady = ShizukuManager.isReady()
-            delay(1000)
+            rootGranted = RootAccess.isRootGranted()
+            rootInstalled = RootAccess.isRootInstalled()
+            delay(1500)
         }
     }
 
-    val registry = OffloadPermissionManager.toolRegistry
-    val dataTools = registry.filter {
-        it.showInSettings &&
-            (it.toolName in DATA_TOOLS)
-    }
-    val fileTools = registry.filter { it.toolName in FILE_TOOLS }
-    val advancedTools = registry.filter {
-        it.showInSettings &&
-            it.toolName !in DATA_TOOLS &&
-            it.toolName !in FILE_TOOLS &&
-            it.toolName !in PRIVILEGED_TOOLS
-    }
-    val customised = registry.filter { it.showInSettings && isCustomised(it.toolName) }
+    val currentRootLevel = levels["root_cli"] ?: PermissionLevel.ASK_ONCE
 
     SettingsScaffold(
         title = stringResource(R.string.perm_title),
@@ -145,262 +129,350 @@ fun OffloadPermissionScreen(
             )
         },
     ) {
-        // ── ① Privileged backends ────────────────────────────────────────
-        // The only three capabilities that ship DENIED. Everything else in this
-        // screen is, by default, already switched on.
+        // ── ① Host Root Privilege (bash as_root) ──────────────────────────
         SettingsSection(
-            header = stringResource(R.string.perm_section_privileged_backend),
-            footer = stringResource(R.string.perm_privileged_footer),
+            header = stringResource(R.string.perm_section_root_privilege),
+            footer = stringResource(R.string.perm_section_root_privilege_footer),
         ) {
-            // Root
-            CapabilityRow(
+            // Root Status
+            SettingsRow(
                 title = stringResource(R.string.perm_root_cli_title),
-                subtitle = stringResource(R.string.perm_root_cli_sub),
+                subtitle = when {
+                    rootGranted -> "su (UID 0) · Magisk / KernelSU"
+                    rootInstalled -> "su " + stringResource(R.string.shizuku_badge_need_permission)
+                    else -> stringResource(R.string.perm_state_not_installed)
+                },
                 icon = Icons.Outlined.Lock,
                 iconColor = Color(0xFFFF3B30),
-                level = levels["root_cli"] ?: PermissionLevel.ASK_ONCE,
-                onLevelChange = { OffloadPermissionManager.setLevel("root_cli", it) },
-                statusText = stringResource(R.string.perm_root_status),
-                statusColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                onClick = { onOpenPrivilegedBackend() },
+                showChevron = false,
+                trailing = {
+                    Text(
+                        text = if (rootGranted) stringResource(R.string.shizuku_badge_ready) else stringResource(R.string.perm_state_off),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (rootGranted) Color(0xFF34C759) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
                 showDivider = true,
             )
 
-            // Shizuku
-            CapabilityRow(
-                title = stringResource(R.string.perm_tool_shizuku_cli),
-                subtitle = stringResource(R.string.perm_shizuku_cli_sub),
+            // Policy Option 1: ASK_ONCE (Recommended)
+            SettingsRow(
+                title = stringResource(R.string.perm_root_policy_ask_session),
+                subtitle = stringResource(R.string.perm_root_policy_ask_session_sub),
+                onClick = { OffloadPermissionManager.setLevel("root_cli", PermissionLevel.ASK_ONCE) },
+                showChevron = false,
+                trailing = {
+                    RadioButton(
+                        selected = currentRootLevel == PermissionLevel.ASK_ONCE,
+                        onClick = { OffloadPermissionManager.setLevel("root_cli", PermissionLevel.ASK_ONCE) },
+                        colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary),
+                    )
+                },
+                showDivider = true,
+            )
+
+            // Policy Option 2: BYPASS (Always Allow / Geek Mode)
+            SettingsRow(
+                title = stringResource(R.string.perm_root_policy_always),
+                subtitle = stringResource(R.string.perm_root_policy_always_sub),
+                onClick = { OffloadPermissionManager.setLevel("root_cli", PermissionLevel.BYPASS) },
+                showChevron = false,
+                trailing = {
+                    RadioButton(
+                        selected = currentRootLevel == PermissionLevel.BYPASS,
+                        onClick = { OffloadPermissionManager.setLevel("root_cli", PermissionLevel.BYPASS) },
+                        colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary),
+                    )
+                },
+                showDivider = true,
+            )
+
+            // Policy Option 3: NOT_ALLOWED (Disabled)
+            SettingsRow(
+                title = stringResource(R.string.perm_root_policy_disabled),
+                subtitle = stringResource(R.string.perm_root_policy_disabled_sub),
+                onClick = { OffloadPermissionManager.setLevel("root_cli", PermissionLevel.NOT_ALLOWED) },
+                showChevron = false,
+                trailing = {
+                    RadioButton(
+                        selected = currentRootLevel == PermissionLevel.NOT_ALLOWED,
+                        onClick = { OffloadPermissionManager.setLevel("root_cli", PermissionLevel.NOT_ALLOWED) },
+                        colors = RadioButtonDefaults.colors(selectedColor = MaterialTheme.colorScheme.primary),
+                    )
+                },
+                showDivider = true,
+            )
+
+            // RootCommandGuard Protection Status
+            SettingsRow(
+                title = stringResource(R.string.perm_guard_title),
+                subtitle = stringResource(R.string.perm_guard_sub),
                 icon = Icons.Outlined.Shield,
-                iconColor = Color(0xFFAF52DE),
-                level = levels["shizuku_cli"] ?: PermissionLevel.NOT_ALLOWED,
-                onLevelChange = { OffloadPermissionManager.setLevel("shizuku_cli", it) },
-                statusText = shizukuStateLabel(),
-                statusColor = shizukuStateColor(),
-                onClick = { onOpenPrivilegedBackend() },
+                iconColor = Color(0xFF34C759),
+                showChevron = false,
+                trailing = {
+                    Text(
+                        text = stringResource(R.string.perm_guard_active),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF34C759),
+                    )
+                },
                 showDivider = true,
             )
 
-            // Accessibility
-            CapabilityRow(
-                title = stringResource(R.string.perm_tool_a11y_cli),
-                subtitle = stringResource(R.string.perm_a11y_cli_sub),
-                icon = Icons.Outlined.Accessibility,
-                iconColor = Color(0xFF34C759),
-                level = levels["a11y_cli"] ?: PermissionLevel.NOT_ALLOWED,
-                onLevelChange = { OffloadPermissionManager.setLevel("a11y_cli", it) },
-                statusText = stringResource(
-                    if (a11yEnabled && a11yConnected) R.string.perm_state_on
-                    else R.string.perm_state_off
-                ),
-                statusColor = if (a11yEnabled && a11yConnected) Color(0xFF34C759)
-                else MaterialTheme.colorScheme.onSurfaceVariant,
-                onClick = { A11yState.openSettings(context) },
+            // Root Audit Logs
+            SettingsRow(
+                title = stringResource(R.string.perm_root_audit_title),
+                subtitle = stringResource(R.string.perm_root_audit_sub),
+                icon = Icons.Outlined.Description,
+                iconColor = Color(0xFF007AFF),
+                onClick = onOpenLogs,
+                showChevron = true,
                 showDivider = false,
             )
         }
 
-        // ── ② Anything the user has changed away from its default ─────────
-        // The answer to "what did I actually turn off" without making the user
-        // scroll past sixteen rows to find out.
+        // ── ② Screen Perception & GUI Automation (screen_view / screen_touch) ──
         SettingsSection(
-            header = stringResource(R.string.perm_section_your_changes),
-            footer = null,
+            header = stringResource(R.string.perm_section_screen_automation),
+            footer = stringResource(R.string.perm_section_screen_automation_footer),
         ) {
-            if (customised.isEmpty()) {
-                NoRestrictionsRow()
-            } else {
-                customised.forEachIndexed { index, info ->
-                    CapabilityRow(
-                        title = capabilityTitle(info.toolName),
-                        subtitle = capabilitySubtitle(info.toolName),
-                        icon = capabilityIcon(info.toolName),
-                        iconColor = capabilityTint(info.toolName),
-                        level = levels[info.toolName] ?: info.defaultLevel,
-                        onLevelChange = { OffloadPermissionManager.setLevel(info.toolName, it) },
-                        showDivider = index < customised.lastIndex,
+            // Master Switch
+            SettingsSwitchRow(
+                title = stringResource(R.string.perm_screen_tools_title),
+                subtitle = stringResource(R.string.perm_screen_tools_sub),
+                checked = screenEnabled,
+                onCheckedChange = { enabled ->
+                    screenEnabled = enabled
+                    AgentToolSwitch.SCREEN.setEnabled(context, enabled)
+                    OffloadPermissionManager.setLevel(
+                        "screen",
+                        if (enabled) PermissionLevel.BYPASS else PermissionLevel.NOT_ALLOWED,
                     )
-                }
-            }
-        }
+                },
+                icon = Icons.Outlined.PhoneAndroid,
+                iconColor = Color(0xFF34C759),
+                showDivider = true,
+            )
 
-        // ── ③ Private data ───────────────────────────────────────────────
-        CollapsibleCapabilityGroup(
-            title = stringResource(R.string.perm_section_data),
-            summary = groupSummary(dataTools.map { it.toolName }),
-            footer = stringResource(R.string.perm_data_footer),
-            icon = Icons.Outlined.Lock,
-            tint = Color(0xFF5856D6),
-            expanded = dataExpanded,
-            onToggle = { dataExpanded = !dataExpanded },
-        ) {
-            dataTools.forEachIndexed { index, info ->
-                CapabilityRow(
-                    title = capabilityTitle(info.toolName),
-                    subtitle = capabilitySubtitle(info.toolName),
-                    icon = capabilityIcon(info.toolName),
-                    iconColor = capabilityTint(info.toolName),
-                    level = levels[info.toolName] ?: info.defaultLevel,
-                    onLevelChange = { OffloadPermissionManager.setLevel(info.toolName, it) },
-                    showDivider = index < dataTools.lastIndex,
+            // Pipeline 1: Root Pipeline (Priority)
+            SettingsRow(
+                title = stringResource(R.string.perm_pipeline_root_title),
+                subtitle = stringResource(R.string.perm_pipeline_root_sub),
+                icon = Icons.Outlined.Terminal,
+                iconColor = Color(0xFFFF3B30),
+                showChevron = false,
+                trailing = {
+                    Text(
+                        text = stringResource(if (rootGranted) R.string.perm_state_on else R.string.perm_state_off),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (rootGranted) Color(0xFF34C759) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                showDivider = true,
+            )
+
+            // Pipeline 2: Shizuku / Sui Binder
+            SettingsRow(
+                title = stringResource(R.string.perm_pipeline_shizuku_title),
+                subtitle = stringResource(R.string.perm_pipeline_shizuku_sub),
+                icon = Icons.Outlined.Shield,
+                iconColor = Color(0xFFAF52DE),
+                onClick = onOpenPrivilegedBackend,
+                showChevron = true,
+                trailing = {
+                    Text(
+                        text = shizukuStateLabel(),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = shizukuStateColor(),
+                    )
+                },
+                showDivider = true,
+            )
+
+            // Pipeline 3: Accessibility Service (Fallback / SoM marks)
+            val hasSystemIssues = a11yRestricted || a11yRevoked || (a11yEnabled && !a11yConnected && PowerOptimizationManager.needsOemAutostartGuidance())
+            SettingsRow(
+                title = stringResource(R.string.perm_pipeline_a11y_title),
+                subtitle = stringResource(R.string.perm_pipeline_a11y_sub),
+                icon = Icons.Outlined.Accessibility,
+                iconColor = Color(0xFF34C759),
+                onClick = { A11yState.openSettings(context) },
+                showChevron = true,
+                trailing = {
+                    Text(
+                        text = stringResource(
+                            if (a11yEnabled && a11yConnected) R.string.perm_state_on
+                            else R.string.perm_state_off
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (a11yEnabled && a11yConnected) Color(0xFF34C759)
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                showDivider = hasSystemIssues,
+            )
+
+            // Diagnostic & One-Click Repair Rows
+            if (a11yRestricted) {
+                SettingsRow(
+                    icon = Icons.Outlined.Lock,
+                    iconColor = Color(0xFFFF9500),
+                    title = stringResource(R.string.system_permissions_a11y_restricted_header),
+                    subtitle = stringResource(
+                        if (unrestricting) R.string.system_permissions_a11y_restricted_shizuku_sub
+                        else if (unrestrictFailed) R.string.system_permissions_a11y_restricted_failed
+                        else R.string.system_permissions_a11y_restricted_shizuku
+                    ),
+                    onClick = {
+                        if (unrestricting) return@SettingsRow
+                        unrestricting = true
+                        unrestrictFailed = false
+                        scope.launch {
+                            val ok = RestrictedSettingsManager.clearWithShizuku(context)
+                            unrestricting = false
+                            unrestrictFailed = !ok
+                        }
+                    },
+                    showDivider = a11yRevoked,
+                )
+            }
+            if (a11yRevoked) {
+                SettingsRow(
+                    icon = Icons.Outlined.Build,
+                    iconColor = Color(0xFFFF3B30),
+                    title = stringResource(
+                        if (shizukuReady) R.string.a11y_repair_row_shizuku
+                        else R.string.a11y_repair_row_manual
+                    ),
+                    subtitle = when {
+                        repairing -> stringResource(R.string.a11y_repair_in_progress)
+                        repairFailed -> stringResource(R.string.a11y_repair_failed)
+                        else -> stringResource(R.string.a11y_repair_row_sub)
+                    },
+                    onClick = {
+                        if (!shizukuReady) {
+                            A11yState.openSettings(context)
+                            return@SettingsRow
+                        }
+                        if (repairing) return@SettingsRow
+                        repairing = true
+                        repairFailed = false
+                        scope.launch {
+                            val ok = AccessibilityRecoveryManager.repairWithShizuku(context)
+                            repairing = false
+                            repairFailed = !ok
+                        }
+                    },
+                    showDivider = false,
+                )
+            }
+            if (a11yEnabled && !a11yConnected && PowerOptimizationManager.needsOemAutostartGuidance()) {
+                val activity = context as? Activity
+                SettingsRow(
+                    icon = Icons.Outlined.RestartAlt,
+                    iconColor = Color(0xFFFF9500),
+                    title = stringResource(R.string.system_permissions_a11y_oem_autostart),
+                    subtitle = stringResource(R.string.system_permissions_a11y_oem_autostart_sub),
+                    onClick = {
+                        activity?.let {
+                            if (!PowerOptimizationManager.openOemAutostartSettings(it)) {
+                                PowerOptimizationManager.openAppDetailsSettings(it)
+                            }
+                        }
+                    },
+                    showDivider = true,
+                )
+                SettingsRow(
+                    icon = Icons.Outlined.BatteryAlert,
+                    iconColor = Color(0xFFFF9500),
+                    title = stringResource(R.string.system_permissions_a11y_oem_battery),
+                    subtitle = stringResource(R.string.system_permissions_a11y_oem_battery_sub),
+                    onClick = {
+                        activity?.let {
+                            if (!PowerOptimizationManager.requestBatteryOptimizationExemption(it)) {
+                                PowerOptimizationManager.openAppDetailsSettings(it)
+                            }
+                        }
+                    },
+                    showDivider = false,
                 )
             }
         }
 
-        // ── ④ More ───────────────────────────────────────────────────────
-        CollapsibleCapabilityGroup(
-            title = stringResource(R.string.perm_section_more),
-            summary = groupSummary(fileTools.map { it.toolName } + advancedTools.map { it.toolName }),
-            footer = stringResource(R.string.perm_more_footer),
-            icon = Icons.Outlined.Folder,
-            tint = Color(0xFFFF9500),
-            expanded = advancedExpanded,
-            onToggle = { advancedExpanded = !advancedExpanded },
+        // ── ③ Host Filesystem & Storage (/data & /sdcard) ──────────────────
+        SettingsSection(
+            header = stringResource(R.string.perm_section_host_storage),
+            footer = stringResource(R.string.perm_section_host_storage_footer),
         ) {
-            (fileTools + advancedTools).forEachIndexed { index, info ->
-                CapabilityRow(
-                    title = capabilityTitle(info.toolName),
-                    subtitle = capabilitySubtitle(info.toolName),
-                    icon = capabilityIcon(info.toolName),
-                    iconColor = capabilityTint(info.toolName),
-                    level = levels[info.toolName] ?: info.defaultLevel,
-                    onLevelChange = { OffloadPermissionManager.setLevel(info.toolName, it) },
-                    showDivider = index < fileTools.size + advancedTools.size - 1,
-                )
-            }
+            // /data Private App Data Protection (read / write / edit)
+            val fileLevel = levels["write"] ?: PermissionLevel.BYPASS
+            CapabilityRow(
+                title = stringResource(R.string.perm_storage_data_title),
+                subtitle = stringResource(R.string.perm_storage_data_sub),
+                icon = Icons.Outlined.Folder,
+                iconColor = Color(0xFFFF9500),
+                level = fileLevel,
+                onLevelChange = { newLevel ->
+                    OffloadPermissionManager.setLevel("write", newLevel)
+                    OffloadPermissionManager.setLevel("read", newLevel)
+                    OffloadPermissionManager.setLevel("edit", newLevel)
+                },
+                showDivider = true,
+            )
+
+            // /sdcard External Storage Access
+            SettingsRow(
+                title = stringResource(R.string.perm_storage_sdcard_title),
+                subtitle = stringResource(R.string.perm_storage_sdcard_sub),
+                icon = Icons.Outlined.FolderShared,
+                iconColor = Color(0xFF34C759),
+                showChevron = false,
+                trailing = {
+                    Text(
+                        text = stringResource(R.string.perm_state_on),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color(0xFF34C759),
+                    )
+                },
+                showDivider = true,
+            )
+
+            // minis-config Tool Modification Switch
             SettingsSwitchRow(
                 title = stringResource(R.string.perm_allow_minis_config),
                 subtitle = stringResource(R.string.perm_minis_config_desc),
                 checked = configEnabled,
                 onCheckedChange = { MinisConfigPermissionStore.setEnabled(it) },
+                icon = Icons.Outlined.Build,
+                iconColor = Color(0xFF007AFF),
                 showDivider = false,
             )
         }
 
-        // ── System grants that are actually in the way ────────────────────
-        // Only rows with something to fix. Everything already satisfied
-        // collapses to one summary line, because a settings screen that
-        // celebrates what is already fine is noise.
-        val systemIssues = buildList {
-            if (!a11yEnabled && a11yRestricted) {
-                add("restricted")
-            }
-            if (a11yRevoked) {
-                add("revoked")
-            }
-            if (a11yEnabled && !a11yConnected &&
-                PowerOptimizationManager.needsOemAutostartGuidance()
-            ) {
-                add("oem")
-            }
-        }
+        // ── ④ Sandbox Browser (browser_use) ──────────────────────────────
         SettingsSection(
-            header = stringResource(R.string.perm_section_system_grants),
-            footer = stringResource(R.string.perm_system_grants_footer),
+            header = stringResource(R.string.perm_section_sandbox_browser),
+            footer = stringResource(R.string.perm_section_sandbox_browser_footer),
         ) {
-            if (systemIssues.isEmpty()) {
-                AllHealthyRow(stringResource(R.string.perm_system_grants_ok), 3)
-            } else {
-                var first = true
-                if ("restricted" in systemIssues) {
-                    SettingsRow(
-                        icon = Icons.Outlined.Lock,
-                        iconColor = Color(0xFFFF9500),
-                        title = stringResource(R.string.system_permissions_a11y_restricted_header),
-                        subtitle = stringResource(
-                            if (unrestricting) R.string.system_permissions_a11y_restricted_shizuku_sub
-                            else if (unrestrictFailed) R.string.system_permissions_a11y_restricted_failed
-                            else R.string.system_permissions_a11y_restricted_shizuku
-                        ),
-                        onClick = {
-                            if (unrestricting) return@SettingsRow
-                            unrestricting = true
-                            unrestrictFailed = false
-                            scope.launch {
-                                val ok = RestrictedSettingsManager.clearWithShizuku(context)
-                                unrestricting = false
-                                unrestrictFailed = !ok
-                            }
-                        },
-                        showDivider = true,
+            SettingsSwitchRow(
+                title = stringResource(R.string.perm_browser_use_title),
+                subtitle = stringResource(R.string.perm_browser_use_sub),
+                checked = browserEnabled,
+                onCheckedChange = { enabled ->
+                    browserEnabled = enabled
+                    AgentToolSwitch.BROWSER.setEnabled(context, enabled)
+                    OffloadPermissionManager.setLevel(
+                        "browser_use",
+                        if (enabled) PermissionLevel.BYPASS else PermissionLevel.NOT_ALLOWED,
                     )
-                    first = false
-                }
-                if ("revoked" in systemIssues) {
-                    SettingsRow(
-                        icon = Icons.Outlined.Build,
-                        iconColor = Color(0xFFFF3B30),
-                        title = stringResource(
-                            if (shizukuReady) R.string.a11y_repair_row_shizuku
-                            else R.string.a11y_repair_row_manual
-                        ),
-                        subtitle = when {
-                            repairing -> stringResource(R.string.a11y_repair_in_progress)
-                            repairFailed -> stringResource(R.string.a11y_repair_failed)
-                            else -> stringResource(R.string.a11y_repair_row_sub)
-                        },
-                        onClick = {
-                            if (!shizukuReady) {
-                                A11yState.openSettings(context)
-                                return@SettingsRow
-                            }
-                            if (repairing) return@SettingsRow
-                            repairing = true
-                            repairFailed = false
-                            scope.launch {
-                                val ok = AccessibilityRecoveryManager.repairWithShizuku(context)
-                                repairing = false
-                                repairFailed = !ok
-                            }
-                        },
-                        showDivider = first,
-                    )
-                    first = false
-                }
-                if ("oem" in systemIssues) {
-                    val activity = context as? Activity
-                    SettingsRow(
-                        icon = Icons.Outlined.RestartAlt,
-                        iconColor = Color(0xFFFF9500),
-                        title = stringResource(
-                            R.string.system_permissions_a11y_oem_autostart
-                        ),
-                        subtitle = stringResource(
-                            R.string.system_permissions_a11y_oem_autostart_sub
-                        ),
-                        onClick = {
-                            activity?.let {
-                                if (!PowerOptimizationManager
-                                        .openOemAutostartSettings(it)
-                                ) {
-                                    PowerOptimizationManager
-                                        .openAppDetailsSettings(it)
-                                }
-                            }
-                        },
-                        showDivider = first,
-                    )
-                    first = false
-                    SettingsRow(
-                        icon = Icons.Outlined.BatteryAlert,
-                        iconColor = Color(0xFFFF9500),
-                        title = stringResource(R.string.system_permissions_a11y_oem_battery),
-                        subtitle = stringResource(
-                            R.string.system_permissions_a11y_oem_battery_sub
-                        ),
-                        onClick = {
-                            activity?.let {
-                                if (!PowerOptimizationManager
-                                        .requestBatteryOptimizationExemption(it)
-                                ) {
-                                    PowerOptimizationManager
-                                        .openAppDetailsSettings(it)
-                                }
-                            }
-                        },
-                        showDivider = false,
-                    )
-                }
-            }
+                },
+                icon = Icons.Outlined.Public,
+                iconColor = Color(0xFF007AFF),
+                showDivider = false,
+            )
         }
 
         Spacer(Modifier.height(24.dp))
@@ -415,6 +487,10 @@ fun OffloadPermissionScreen(
                 TextButton(onClick = {
                     OffloadPermissionManager.resetAll()
                     MinisConfigPermissionStore.setEnabled(true)
+                    AgentToolSwitch.SCREEN.setEnabled(context, true)
+                    AgentToolSwitch.BROWSER.setEnabled(context, true)
+                    screenEnabled = true
+                    browserEnabled = true
                     showResetConfirm = false
                 }) { Text(stringResource(R.string.perm_reset_confirm)) }
             },
@@ -427,92 +503,7 @@ fun OffloadPermissionScreen(
     }
 }
 
-// ── presentation helpers ────────────────────────────────────────────────
-
-private val DATA_TOOLS = setOf("calendar", "location", "clipboard", "contacts", "photos")
-
-/**
- * [T-android-tool-surface] File tools live here rather than under "Data": they
- * are the only capabilities whose tri-state governs something narrower than
- * their name suggests, and the footer says so rather than the row overstating
- * it.
- */
-private val FILE_TOOLS = setOf("read", "write", "edit")
-
-private val PRIVILEGED_TOOLS = setOf("root_cli", "shizuku_cli", "a11y_cli")
-
-@Composable
-private fun isCustomised(toolName: String) =
-    OffloadPermissionManager.isCustomised(toolName)
-
-@Composable
-private fun capabilityTitle(toolName: String): String = stringResource(
-    when (toolName) {
-        "calendar" -> R.string.perm_tool_calendar
-        "location" -> R.string.perm_tool_location
-        "clipboard" -> R.string.perm_tool_clipboard
-        "contacts" -> R.string.perm_tool_contacts
-        "photos" -> R.string.perm_tool_photos
-        "read" -> R.string.perm_tool_read
-        "write" -> R.string.perm_tool_write
-        "edit" -> R.string.perm_tool_edit
-        "a11y_cli" -> R.string.perm_tool_a11y_cli
-        "shizuku_cli" -> R.string.perm_tool_shizuku_cli
-        "root_cli" -> R.string.perm_root_cli_title
-        else -> R.string.perm_section_more
-    }
-)
-
-/**
- * Q3 decision: state the boundary rather than imply more than the code does.
- * The tri-state on read/write/edit only fires for paths under /data — the
- * protected-path refusal is unconditional and separate. The previous footer
- * claimed the switch covered ordinary file access, which it never did.
- */
-@Composable
-private fun capabilitySubtitle(toolName: String): String? = when (toolName) {
-    "read" -> stringResource(R.string.perm_tool_read_sub)
-    "write" -> stringResource(R.string.perm_tool_write_sub)
-    "edit" -> stringResource(R.string.perm_tool_edit_sub)
-    else -> null
-}
-
-private fun capabilityIcon(toolName: String): ImageVector = when (toolName) {
-    "calendar" -> Icons.Outlined.CalendarMonth
-    "location" -> Icons.Outlined.LocationOn
-    "clipboard" -> Icons.Outlined.Description
-    "contacts" -> Icons.Outlined.Contacts
-    "photos" -> Icons.Outlined.Image
-    "read" -> Icons.Outlined.Description
-    "write" -> Icons.Outlined.Folder
-    "edit" -> Icons.Outlined.EditNote
-    "root_cli" -> Icons.Outlined.Lock
-    "shizuku_cli" -> Icons.Outlined.Shield
-    "a11y_cli" -> Icons.Outlined.Accessibility
-    else -> Icons.Outlined.Terminal
-}
-
-private fun capabilityTint(toolName: String): Color = when (toolName) {
-    "root_cli" -> Color(0xFFFF3B30)
-    "shizuku_cli" -> Color(0xFFAF52DE)
-    "a11y_cli" -> Color(0xFF34C759)
-    "location" -> Color(0xFF34C759)
-    "read" -> Color(0xFF32ADE6)
-    "write" -> Color(0xFF007AFF)
-    "edit" -> Color(0xFFFF9500)
-    else -> Color(0xFF5856D6)
-}
-
-@Composable
-private fun groupSummary(toolNames: List<String>): String {
-    val n = toolNames.size
-    val changed = toolNames.count { OffloadPermissionManager.isCustomised(it) }
-    return stringResource(
-        if (changed > 0) R.string.perm_group_customised else R.string.perm_group_default,
-        n,
-        changed,
-    )
-}
+// ── Helpers ─────────────────────────────────────────────────────────────
 
 @Composable
 private fun shizukuStateLabel(): String = when {

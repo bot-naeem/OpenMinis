@@ -67,44 +67,16 @@ object OffloadPermissionManager {
      * "always permit" carve-out needed.
      */
     val toolRegistry: List<ToolPermissionInfo> = listOf(
-        // Privacy — user-configurable, visible in Settings.
-        ToolPermissionInfo("calendar", "Calendar", PermissionCategory.PRIVACY, PermissionLevel.BYPASS),
-        ToolPermissionInfo("location", "Location", PermissionCategory.PRIVACY, PermissionLevel.BYPASS),
-        ToolPermissionInfo("clipboard", "Clipboard", PermissionCategory.PRIVACY, PermissionLevel.BYPASS),
-        ToolPermissionInfo("contacts", "Contacts", PermissionCategory.PRIVACY, PermissionLevel.BYPASS),
-        ToolPermissionInfo("photos", "Photos", PermissionCategory.PRIVACY, PermissionLevel.BYPASS),
-        // Media — no personal data, hidden from Settings.
-        ToolPermissionInfo("speak", "Text-to-Speech", PermissionCategory.MEDIA, PermissionLevel.BYPASS, showInSettings = false),
-        ToolPermissionInfo("media_player", "Media Player", PermissionCategory.MEDIA, PermissionLevel.BYPASS, showInSettings = false),
-        ToolPermissionInfo("speech_recognition", "Speech Recognition", PermissionCategory.MEDIA, PermissionLevel.BYPASS, showInSettings = false),
-        // System — no personal data, hidden from Settings.
-        ToolPermissionInfo("alarm", "Alarms & Timers", PermissionCategory.SYSTEM, PermissionLevel.BYPASS, showInSettings = false),
-        ToolPermissionInfo("weather", "Weather", PermissionCategory.SYSTEM, PermissionLevel.BYPASS, showInSettings = false),
-        ToolPermissionInfo("notification", "Notifications", PermissionCategory.SYSTEM, PermissionLevel.BYPASS, showInSettings = false),
-        ToolPermissionInfo("device_info", "Device Info", PermissionCategory.SYSTEM, PermissionLevel.BYPASS, showInSettings = false),
-        // T330: integrations — opt-in by default. These tools can drive
-        // other apps and read on-screen content, so the safer posture is
-        // NOT_ALLOWED until the user picks otherwise even when the
-        // underlying system layer (Shizuku binder / Accessibility service)
-        // is already authorized.
-        ToolPermissionInfo("a11y_cli", "android-a11y-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.NOT_ALLOWED),
+        // Host Root privilege execution (UID 0 / su) - defaults to ASK_ONCE (session card)
+        ToolPermissionInfo("root_cli", "Host Root Execution", PermissionCategory.INTEGRATIONS, PermissionLevel.ASK_ONCE),
+        // Screen automation tools (screen_view, screen_touch)
+        ToolPermissionInfo("screen", "Screen Automation", PermissionCategory.INTEGRATIONS, PermissionLevel.BYPASS),
+        // Sandbox Browser (browser_use)
+        ToolPermissionInfo("browser_use", "Sandbox Browser", PermissionCategory.INTEGRATIONS, PermissionLevel.BYPASS),
+        // Privileged backends: Shizuku and Accessibility
         ToolPermissionInfo("shizuku_cli", "android-shizuku-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.NOT_ALLOWED),
-        // [T-android-sandbox-only] The root backend. ASK_ONCE out of the
-        // box: in a chat session without pre-authorization, each invocation
-        // prompts the user with the command detail. When the user enables
-        // session root or accepts "Allow in this session", commands bypass
-        // the prompt for that session.
-        ToolPermissionInfo("root_cli", "android-root-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.ASK_ONCE),
-        // [T-android-sandbox-only] The file tools now resolve on the host, so
-        // they carry the same reach as any other host write. They default to
-        // BYPASS for the same reason the CLI above defaults to BYPASS: this app
-        // is built to run unattended (scheduled tasks fire while the phone sits
-        // on a desk), and checkPermission() suspends until someone answers a
-        // dialog. A prompt nobody is there to answer would wedge the turn, so
-        // the default path must not prompt. A user who wants a wall in front of
-        // agent file writes downgrades these to ASK_ONCE in Settings and gets
-        // one; the always-on protection is FileToolGuard's protected-path
-        // refusal, which never blocks on anything.
+        ToolPermissionInfo("a11y_cli", "android-a11y-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.NOT_ALLOWED),
+        // Host filesystem tools (/data protection)
         ToolPermissionInfo("read", "Read files", PermissionCategory.SYSTEM, PermissionLevel.BYPASS, showInSettings = true),
         ToolPermissionInfo("write", "Write files", PermissionCategory.SYSTEM, PermissionLevel.BYPASS, showInSettings = true),
         ToolPermissionInfo("edit", "Edit files", PermissionCategory.SYSTEM, PermissionLevel.BYPASS, showInSettings = true),

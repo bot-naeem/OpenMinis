@@ -2351,4 +2351,39 @@
          got "analyze the current screen" with nothing attached and no idea
          why. Each case names what is missing and where to fix it. -->
     <string name="a11y_service_label">Minis Accessibility</string>
+
+    <!-- Root Privilege & Automation Control Center strings -->
+    <string name="perm_section_root_privilege">Host Root Privilege (bash as_root)</string>
+    <string name="perm_section_root_privilege_footer">Controls superuser command execution on the Android host. Commands run with UID 0 through su.</string>
+    <string name="perm_root_policy_ask_session">Ask Once per Session (Recommended)</string>
+    <string name="perm_root_policy_ask_session_sub">Prompt for confirmation on the first root command in a session; subsequent commands execute directly.</string>
+    <string name="perm_root_policy_always">Always Allow (Geek Mode)</string>
+    <string name="perm_root_policy_always_sub">Silently execute root commands without interactive interruptions.</string>
+    <string name="perm_root_policy_disabled">Disable Root</string>
+    <string name="perm_root_policy_disabled_sub">Prevent the agent from executing any host superuser commands.</string>
+    <string name="perm_guard_title">Brick Protection (RootCommandGuard)</string>
+    <string name="perm_guard_sub">Active: automatically blocks /dev/block raw writes, system partition wipes, and catastrophic operations.</string>
+    <string name="perm_guard_active">Active</string>
+    <string name="perm_root_audit_title">Root Audit &amp; Execution Logs</string>
+    <string name="perm_root_audit_sub">View timestamps, exit codes, and blocked attempts for all superuser commands.</string>
+    <string name="perm_section_screen_automation">Screen Perception &amp; Automation</string>
+    <string name="perm_section_screen_automation_footer">Controls screen_view (visual perception &amp; SoM element tagging) and screen_touch (gestures &amp; keystrokes).</string>
+    <string name="perm_screen_tools_title">Screen Automation Tools</string>
+    <string name="perm_screen_tools_sub">Enable screen_view and screen_touch tools for multimodal agents.</string>
+    <string name="perm_pipeline_root_title">Root Screencap &amp; Input</string>
+    <string name="perm_pipeline_root_sub">Fastest, zero-latency direct screen capture and touch injection via su.</string>
+    <string name="perm_pipeline_shizuku_title">Shizuku / Sui Binder</string>
+    <string name="perm_pipeline_shizuku_sub">ADB-privilege system binder and Sui root module interface.</string>
+    <string name="perm_pipeline_a11y_title">Accessibility Service</string>
+    <string name="perm_pipeline_a11y_sub">UI element hierarchy analysis, Set-of-Marks detection, and gesture fallback.</string>
+    <string name="perm_section_host_storage">Host Filesystem &amp; Storage</string>
+    <string name="perm_section_host_storage_footer">Governs access to /data and external storage. RootCommandGuard permanently shields device firmware partitions.</string>
+    <string name="perm_storage_data_title">Private App Data (/data)</string>
+    <string name="perm_storage_data_sub">Ask before reading or writing other apps\' private databases and files.</string>
+    <string name="perm_storage_sdcard_title">External Storage (/sdcard)</string>
+    <string name="perm_storage_sdcard_sub">Shared user documents, downloads, and media files.</string>
+    <string name="perm_section_sandbox_browser">Sandbox Browser (browser_use)</string>
+    <string name="perm_section_sandbox_browser_footer">Isolated background web browser for scraping, DOM queries, and login flows without touching your main browser.</string>
+    <string name="perm_browser_use_title">Sandbox Browser Tool</string>
+    <string name="perm_browser_use_sub">Enable browser_use tool for web exploration and automated browsing tasks.</string>
 </resources>

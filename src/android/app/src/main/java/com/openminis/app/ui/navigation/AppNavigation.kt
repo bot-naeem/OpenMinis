@@ -1392,6 +1392,7 @@ fun AppNavigation(
                 // surface (the two managers share one binder slot, so a
                 // multi-backend abstraction was misleading).
                 onOpenPrivilegedBackend = { navController.safeNavigate(Routes.SHIZUKU) },
+                onOpenLogs = { navController.safeNavigate(Routes.LOGS) },
             )
         }
 
