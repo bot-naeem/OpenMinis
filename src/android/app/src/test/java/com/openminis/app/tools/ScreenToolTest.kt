@@ -1,5 +1,6 @@
 package com.openminis.app.tools
 
+import org.json.JSONArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -7,36 +8,29 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Unit tests for [ScreenTool] coordinate normalization, key mappings, and schema definitions.
+ * Unit tests for [ScreenTool] coordinate normalization, key mappings, point parsing,
+ * and Doubao Phone Assistant / UI-TARS visual grounding schema definitions.
  */
 class ScreenToolTest {
 
     @Test
-    fun `definition exposes screen tool with proper schema`() {
-        val def = ScreenTool.definition()
-        assertEquals(ToolNames.SCREEN, def.name)
-        assertTrue(def.required.contains("tool_title"))
-        assertTrue(def.required.contains("action"))
-
-        val actionParam = def.parameters["action"]
-        assertNotNull(actionParam)
-        val expectedActions = listOf("capture", "tap", "double_tap", "long_press", "swipe", "scroll", "type", "key", "wait")
-        assertTrue(actionParam!!.enumValues!!.containsAll(expectedActions))
-    }
-
-    @Test
-    fun `viewDefinition exposes screen_view tool with proper schema`() {
+    fun `viewDefinition exposes screen_view tool with Set-of-Marks schema`() {
         val def = ScreenTool.viewDefinition()
         assertEquals(ToolNames.SCREEN_VIEW, def.name)
         assertTrue(def.required.contains("tool_title"))
+        assertTrue(def.parameters.containsKey("som"))
         assertTrue(def.parameters.containsKey("delay_ms"))
         assertTrue(def.parameters.containsKey("max_edge"))
         assertTrue(def.parameters.containsKey("quality"))
         assertTrue(def.parameters.containsKey("backend"))
+
+        val somParam = def.parameters["som"]
+        assertNotNull(somParam)
+        assertEquals("boolean", somParam!!.type)
     }
 
     @Test
-    fun `touchDefinition exposes screen_touch tool with proper schema`() {
+    fun `touchDefinition exposes screen_touch tool with Doubao and UI-TARS action space`() {
         val def = ScreenTool.touchDefinition()
         assertEquals(ToolNames.SCREEN_TOUCH, def.name)
         assertTrue(def.required.contains("tool_title"))
@@ -44,10 +38,72 @@ class ScreenToolTest {
 
         val actionParam = def.parameters["action"]
         assertNotNull(actionParam)
-        val expectedActions = listOf("tap", "double_tap", "long_press", "swipe", "scroll", "type", "key", "wait")
+        val expectedActions = listOf(
+            "click", "tap",
+            "double_click", "double_tap",
+            "long_press",
+            "swipe", "scroll",
+            "type",
+            "press_key", "key",
+            "wait",
+            "takeover"
+        )
         assertTrue(actionParam!!.enumValues!!.containsAll(expectedActions))
-        assertTrue(def.parameters.containsKey("capture_after"))
+
+        // Targets and options
+        assertTrue(def.parameters.containsKey("element"))
+        assertTrue(def.parameters.containsKey("point"))
+        assertTrue(def.parameters.containsKey("x"))
+        assertTrue(def.parameters.containsKey("y"))
+        assertTrue(def.parameters.containsKey("to_x"))
+        assertTrue(def.parameters.containsKey("to_y"))
+        assertTrue(def.parameters.containsKey("direction"))
+        assertTrue(def.parameters.containsKey("text"))
+        assertTrue(def.parameters.containsKey("key"))
+        assertTrue(def.parameters.containsKey("duration_ms"))
         assertTrue(def.parameters.containsKey("settle_ms"))
+        assertTrue(def.parameters.containsKey("capture_after"))
+        assertTrue(def.parameters.containsKey("message"))
+        assertTrue(def.parameters.containsKey("backend"))
+    }
+
+    @Test
+    fun `definition delegates to touchDefinition`() {
+        val def = ScreenTool.definition()
+        assertEquals(ToolNames.SCREEN_TOUCH, def.name)
+    }
+
+    @Test
+    fun `parsePoint parses UI-TARS point formats and json array`() {
+        // UI-TARS standard string representation: [x, y]
+        val p1 = ScreenTool.parsePoint("[523, 814]")
+        assertNotNull(p1)
+        assertEquals(523, p1!!.first)
+        assertEquals(814, p1.second)
+
+        // Comma separated
+        val p2 = ScreenTool.parsePoint("100, 200")
+        assertNotNull(p2)
+        assertEquals(100, p2!!.first)
+        assertEquals(200, p2.second)
+
+        // Space separated
+        val p3 = ScreenTool.parsePoint("350 720")
+        assertNotNull(p3)
+        assertEquals(350, p3!!.first)
+        assertEquals(720, p3.second)
+
+        // JSONArray
+        val jsonArr = JSONArray().put(450).put(900)
+        val p4 = ScreenTool.parsePoint(jsonArr)
+        assertNotNull(p4)
+        assertEquals(450, p4!!.first)
+        assertEquals(900, p4.second)
+
+        // Null and invalid inputs
+        assertNull(ScreenTool.parsePoint(null))
+        assertNull(ScreenTool.parsePoint("invalid"))
+        assertNull(ScreenTool.parsePoint(""))
     }
 
     @Test

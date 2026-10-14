@@ -25,7 +25,6 @@ class ToolNamesTest {
         assertEquals(ToolNames.SCREEN, ToolNames.canonical("screen"))
         assertEquals(ToolNames.SCREEN_VIEW, ToolNames.canonical("screen_view"))
         assertEquals(ToolNames.SCREEN_TOUCH, ToolNames.canonical("screen_touch"))
-        assertEquals(ToolNames.ANDROID, ToolNames.canonical("android"))
         assertEquals(ToolNames.MEMORY, ToolNames.canonical("memory"))
         assertEquals(ToolNames.SUBAGENT, ToolNames.canonical("subagent"))
     }
@@ -67,7 +66,6 @@ class ToolNamesTest {
         assertEquals(ToolNames.SCREEN, ToolNames.canonical("CompatScreen1a2b3c"))
         assertEquals(ToolNames.SCREEN_VIEW, ToolNames.canonical("CompatScreenView1a2b3c"))
         assertEquals(ToolNames.SCREEN_TOUCH, ToolNames.canonical("CompatScreenTouch4d5e6f"))
-        assertEquals(ToolNames.ANDROID, ToolNames.canonical("CompatAndroid3e2fbc"))
         assertEquals(ToolNames.MEMORY, ToolNames.canonical("CompatMemory2826fa"))
         assertEquals(ToolNames.SUBAGENT, ToolNames.canonical("CompatSubagent04e77f"))
     }

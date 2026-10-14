@@ -13171,8 +13171,6 @@ class ChatViewModel(
             FileEditTool.NAME -> FileEditTool.execute(argsJson, fsSessionId, context).also {
                 if (it.success) maybeReloadSkillsForPath(argsJson)
             }
-            ToolNames.ANDROID ->
-                com.openminis.app.tools.AndroidTool.execute(argsJson, fsSessionId, context)
             ToolNames.BASH ->
             executeShellCommand(argsJson, toolId, toolBlocks, assistantId, currentText).also {
                 // [T-android-skill-scan-parity] Stands in for the iOS fakefs

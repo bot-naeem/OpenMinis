@@ -23,7 +23,6 @@ object ToolNames {
     const val SCREEN = "screen"
     const val SCREEN_VIEW = "screen_view"
     const val SCREEN_TOUCH = "screen_touch"
-    const val ANDROID = "android"
     const val MEMORY = "memory"
     const val SUBAGENT = "subagent"
 
@@ -68,7 +67,7 @@ object ToolNames {
      * resolves.
      */
     private val CANONICAL_BY_SQUASHED: Map<String, String> =
-        (listOf(BASH, READ, WRITE, EDIT, BROWSER, SCREEN, SCREEN_VIEW, SCREEN_TOUCH, ANDROID, MEMORY, SUBAGENT) + ALIASES.keys)
+        (listOf(BASH, READ, WRITE, EDIT, BROWSER, SCREEN, SCREEN_VIEW, SCREEN_TOUCH, MEMORY, SUBAGENT) + ALIASES.keys)
             .associateBy { squash(it) }
             .mapKeys { (k, _) -> k }
             .mapValues { (_, canonical) -> ALIASES[canonical] ?: canonical }

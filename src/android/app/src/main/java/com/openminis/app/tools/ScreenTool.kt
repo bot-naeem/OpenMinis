@@ -4,35 +4,41 @@ import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Rect
+import android.graphics.RectF
 import android.os.Build
 import android.util.Log
-import android.view.Display
 import android.view.WindowManager
+import android.view.accessibility.AccessibilityNodeInfo
 import com.openminis.app.accessibility.MinisAccessibilityService
 import com.openminis.app.data.model.AgentToolDefinition
 import com.openminis.app.data.model.AgentToolParam
 import com.openminis.app.offload.ShizukuManager
 import com.openminis.app.sandbox.PRootKernel
 import com.openminis.app.sandbox.RootAccess
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.roundToInt
 
 /**
- * Screen automation tool for visual GUI agents.
+ * Mobile GUI automation and Visual Grounding tool (aligned with Doubao Phone Assistant / UI-TARS).
  *
- * Provides phone-level visual perception and physical interaction:
- * - `capture`: captures the screen and returns image data (JPEG compressed) directly into the agent context
- * - `tap`: taps at normalized (0~1000) or physical coordinates
- * - `double_tap`: double taps in rapid succession
- * - `long_press`: presses and holds at a location
- * - `swipe`: swipes from (x, y) to (to_x, to_y) with specified duration
- * - `scroll`: scrolls up, down, left, or right
- * - `type`: inputs text into focused field
- * - `key`: presses system or navigation keys (back, home, recents, enter, etc.)
- * - `wait`: pauses for animations or loading
+ * Provides:
+ * 1. Visual Perception & Set-of-Marks (SoM):
+ *    - `screen_view`: captures screen with optional SoM element tagging (numbered badges [1], [2]...)
+ *      and returns both the visual image and a structured list of interactive elements.
+ * 2. Precision Interaction:
+ *    - `screen_touch`: executes actions targeting either by element ID (e.g. element=3) or
+ *      normalized coordinates (x, y / point=[x, y] in 0~1000 scale).
+ * 3. Complete Action Space:
+ *    - click, double_click, long_press, swipe, scroll, type, press_key, wait, takeover (human-in-the-loop).
  *
  * Backends supported (in order of priority):
  * - Root (`su -c input ...` / `screencap`)
@@ -49,76 +55,76 @@ object ScreenTool {
     private const val DEFAULT_SETTLE_MS = 400L
     private const val DEFAULT_SWIPE_DURATION_MS = 300L
 
-    fun definition(): AgentToolDefinition = AgentToolDefinition(
-        name = NAME,
-        description = "Control and observe the physical Android device screen. " +
-            "Take screenshots to see the current UI (returns visual image data to the model). " +
-            "Perform touch actions (tap, double_tap, long_press, swipe, scroll), type text, " +
-            "press system keys (back, home, recents, enter), or wait for UI rendering. " +
-            "Coordinates x, y, to_x, to_y use normalized 0~1000 scale (0,0 is top-left, 1000,1000 is bottom-right). " +
-            "Supports Root, Shizuku, and AccessibilityService backends automatically. " +
-            "Set `capture_after: true` on any touch action to immediately capture and return the updated screen in the same turn.",
-        parameters = mapOf(
-            "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
-            "action" to AgentToolParam("string", "What to do on the screen",
-                enumValues = listOf("capture", "tap", "double_tap", "long_press", "swipe", "scroll", "type", "key", "wait")),
-            "x" to AgentToolParam("integer", "X coordinate (0~1000 normalized, where 0 is left edge and 1000 is right edge) for tap, double_tap, long_press, or swipe start."),
-            "y" to AgentToolParam("integer", "Y coordinate (0~1000 normalized, where 0 is top edge and 1000 is bottom edge) for tap, double_tap, long_press, or swipe start."),
-            "to_x" to AgentToolParam("integer", "Target X coordinate (0~1000 normalized) for swipe."),
-            "to_y" to AgentToolParam("integer", "Target Y coordinate (0~1000 normalized) for swipe."),
-            "direction" to AgentToolParam("string", "Scroll direction for scroll action", enumValues = listOf("up", "down", "left", "right")),
-            "text" to AgentToolParam("string", "Text to type for type action."),
-            "key" to AgentToolParam("string", "Key name for key action: 'back', 'home', 'recents', 'enter', 'delete', 'volume_up', 'volume_down', 'power' (or Android keycode integer)."),
-            "duration_ms" to AgentToolParam("integer", "Duration in milliseconds for swipe or wait action (default: 300ms for swipe, 1000ms for wait)."),
-            "settle_ms" to AgentToolParam("integer", "Delay in milliseconds after touch action to let Android UI finish transition animations before returning (default: 400ms)."),
-            "capture_after" to AgentToolParam("boolean", "If true, automatically captures the screen after executing the action (after settle delay) and returns the screenshot image in this turn."),
-            "backend" to AgentToolParam("string", "Explicit backend to use ('auto', 'root', 'shizuku', 'a11y'). Default is 'auto' (picks best available).", enumValues = listOf("auto", "root", "shizuku", "a11y")),
-        ),
-        required = listOf("tool_title", "action"),
-        propertyOrdering = listOf("tool_title", "action", "x", "y", "to_x", "to_y", "direction", "text", "key", "duration_ms", "settle_ms", "capture_after", "backend"),
-    )
+    data class DetectedElement(
+        val id: Int,
+        val text: String,
+        val contentDesc: String,
+        val className: String,
+        val bounds: Rect,
+        val centerNormalized: Pair<Int, Int>,
+        val clickable: Boolean,
+    ) {
+        fun toJson(): JSONObject = JSONObject().apply {
+            put("id", id)
+            if (text.isNotEmpty()) put("text", text)
+            if (contentDesc.isNotEmpty()) put("desc", contentDesc)
+            put("center", JSONArray().put(centerNormalized.first).put(centerNormalized.second))
+            put("bounds", JSONArray().put(bounds.left).put(bounds.top).put(bounds.right).put(bounds.bottom))
+        }
+    }
+
+    private val lastPerceivedElements = ConcurrentHashMap<Int, DetectedElement>()
 
     fun viewDefinition(): AgentToolDefinition = AgentToolDefinition(
         name = ToolNames.SCREEN_VIEW,
-        description = "Take a screenshot of the physical Android device screen and return the visual image directly to the model. " +
-            "Use this to perceive the current UI state before deciding touch actions. " +
+        description = "Capture the physical Android screen for visual perception and element grounding (aligned with Doubao Phone Assistant / UI-TARS). " +
+            "Returns the visual image directly to the multimodal model. " +
+            "Supports Set-of-Marks (SoM): when `som: true` (default), interactive UI elements (buttons, inputs, tabs) are visually tagged with numbered badges [1], [2]... on the image, and a list of elements with their text and center coordinates is returned in JSON. " +
+            "Set `som: false` to receive a clean, untagged screenshot for pure visual models like UI-TARS. " +
             "Supports Root, Shizuku, and AccessibilityService backends automatically.",
         parameters = mapOf(
             "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
+            "som" to AgentToolParam("boolean", "Whether to overlay Set-of-Marks (SoM) numbered badges on interactive elements. Default is true. Set false for pure coordinate models like UI-TARS."),
             "delay_ms" to AgentToolParam("integer", "Optional delay in milliseconds before taking screenshot to let animations or page loading settle (default: 0)."),
             "max_edge" to AgentToolParam("integer", "Maximum dimension in pixels for image scaling (default: 1280). Keeps visual detail within model context limits."),
             "quality" to AgentToolParam("integer", "JPEG compression quality from 10 to 100 (default: 80)."),
             "backend" to AgentToolParam("string", "Explicit backend to use ('auto', 'root', 'shizuku', 'a11y'). Default is 'auto'.", enumValues = listOf("auto", "root", "shizuku", "a11y")),
         ),
         required = listOf("tool_title"),
-        propertyOrdering = listOf("tool_title", "delay_ms", "max_edge", "quality", "backend"),
+        propertyOrdering = listOf("tool_title", "som", "delay_ms", "max_edge", "quality", "backend"),
     )
 
     fun touchDefinition(): AgentToolDefinition = AgentToolDefinition(
         name = ToolNames.SCREEN_TOUCH,
-        description = "Perform physical touch, swipe, keyboard typing, or system key actions on the physical Android device screen. " +
-            "Coordinates x, y, to_x, to_y use normalized 0~1000 scale (0,0 is top-left, 1000,1000 is bottom-right). " +
-            "Set `capture_after: true` on any touch action to immediately capture and return the updated screen in the same turn. " +
-            "Supports Root, Shizuku, and AccessibilityService backends automatically.",
+        description = "Perform physical touch, swipe, keyboard typing, system navigation, or user takeover on the Android device (aligned with Doubao Phone Assistant / UI-TARS action space). " +
+            "Targets can be specified by `element` (ID from screen_view SoM, e.g. element=3) OR by normalized coordinates `x, y` (0~1000 scale) / `point=[x, y]`. " +
+            "Supported actions: click/tap, double_click, long_press, swipe, scroll, type, press_key, wait, takeover. " +
+            "Set `capture_after: true` on any action to immediately capture and return the updated screen in the same turn for instant visual verification. " +
+            "Action `takeover`: pauses execution and requests the user to manually handle sensitive operations (CAPTCHA / payment / biometric auth).",
         parameters = mapOf(
             "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
-            "action" to AgentToolParam("string", "What touch action to perform on the screen",
-                enumValues = listOf("tap", "double_tap", "long_press", "swipe", "scroll", "type", "key", "wait")),
-            "x" to AgentToolParam("integer", "X coordinate (0~1000 normalized, where 0 is left edge and 1000 is right edge) for tap, double_tap, long_press, or swipe start."),
-            "y" to AgentToolParam("integer", "Y coordinate (0~1000 normalized, where 0 is top edge and 1000 is bottom edge) for tap, double_tap, long_press, or swipe start."),
+            "action" to AgentToolParam("string", "What action to perform on the screen",
+                enumValues = listOf("click", "tap", "double_click", "double_tap", "long_press", "swipe", "scroll", "type", "press_key", "key", "wait", "takeover")),
+            "element" to AgentToolParam("integer", "Target element ID from screen_view SoM (e.g. 1, 2, 3). If provided, automatically taps the exact center of that element."),
+            "x" to AgentToolParam("integer", "X coordinate (0~1000 normalized, where 0 is left edge and 1000 is right edge) for click, double_click, long_press, or swipe start."),
+            "y" to AgentToolParam("integer", "Y coordinate (0~1000 normalized, where 0 is top edge and 1000 is bottom edge) for click, double_click, long_press, or swipe start."),
+            "point" to AgentToolParam("string", "Alternative [x, y] coordinate string or array (e.g. '[500, 300]') output by UI-TARS / Doubao VLM."),
             "to_x" to AgentToolParam("integer", "Target X coordinate (0~1000 normalized) for swipe."),
             "to_y" to AgentToolParam("integer", "Target Y coordinate (0~1000 normalized) for swipe."),
             "direction" to AgentToolParam("string", "Scroll direction for scroll action", enumValues = listOf("up", "down", "left", "right")),
             "text" to AgentToolParam("string", "Text to type into focused field for type action."),
-            "key" to AgentToolParam("string", "Key name for key action: 'back', 'home', 'recents', 'enter', 'delete', 'volume_up', 'volume_down', 'power' (or Android keycode integer)."),
+            "key" to AgentToolParam("string", "Key name for press_key action: 'back', 'home', 'recents', 'enter', 'delete', 'volume_up', 'volume_down', 'power' (or Android keycode integer)."),
             "duration_ms" to AgentToolParam("integer", "Duration in milliseconds for swipe, long_press, or wait action (default: 300 for swipe, 800 for long_press, 1000 for wait)."),
             "settle_ms" to AgentToolParam("integer", "Delay in milliseconds after touch action to let Android UI finish transition animations before returning (default: 400ms)."),
             "capture_after" to AgentToolParam("boolean", "If true, automatically captures the screen after executing the action (after settle delay) and returns the screenshot image in this turn."),
-            "backend" to AgentToolParam("string", "Explicit backend to use ('auto', 'root', 'shizuku', 'a11y'). Default is 'auto' (picks best available).", enumValues = listOf("auto", "root", "shizuku", "a11y")),
+            "message" to AgentToolParam("string", "Prompt message for takeover action explaining why user assistance is needed (e.g. '请完成滑块验证码后在聊天中回复继续')."),
+            "backend" to AgentToolParam("string", "Explicit backend to use ('auto', 'root', 'shizuku', 'a11y'). Default is 'auto'.", enumValues = listOf("auto", "root", "shizuku", "a11y")),
         ),
         required = listOf("tool_title", "action"),
-        propertyOrdering = listOf("tool_title", "action", "x", "y", "to_x", "to_y", "direction", "text", "key", "duration_ms", "settle_ms", "capture_after", "backend"),
+        propertyOrdering = listOf("tool_title", "action", "element", "x", "y", "point", "to_x", "to_y", "direction", "text", "key", "duration_ms", "settle_ms", "capture_after", "message", "backend"),
     )
+
+    fun definition(): AgentToolDefinition = touchDefinition()
 
     fun executeView(argsJson: String, sessionId: String?, context: Context): ToolExecutionResult {
         val o = try {
@@ -132,9 +138,10 @@ object ScreenTool {
         val maxEdge = o.optInt("max_edge", DEFAULT_MAX_EDGE)
         val quality = o.optInt("quality", DEFAULT_JPEG_QUALITY)
         val backendPref = o.optString("backend", "auto").trim().lowercase()
+        val som = o.optBoolean("som", true)
 
         if (delayMs > 0) sleepQuietly(delayMs)
-        return executeCapture(context, sessionId, maxEdge, quality, backendPref, toolTitle)
+        return executeCapture(context, sessionId, maxEdge, quality, backendPref, toolTitle, enableSom = som)
     }
 
     fun executeTouch(argsJson: String, sessionId: String?, context: Context): ToolExecutionResult {
@@ -161,7 +168,8 @@ object ScreenTool {
         if (action == "capture" || action == "screenshot") {
             val maxEdge = o.optInt("max_edge", DEFAULT_MAX_EDGE)
             val quality = o.optInt("quality", DEFAULT_JPEG_QUALITY)
-            return executeCapture(context, sessionId, maxEdge, quality, backendPref, toolTitle)
+            val som = o.optBoolean("som", true)
+            return executeCapture(context, sessionId, maxEdge, quality, backendPref, toolTitle, enableSom = som)
         }
 
         return dispatchTouchAction(o, action, toolTitle, backendPref, settleMs, captureAfter, sessionId, context)
@@ -195,13 +203,10 @@ object ScreenTool {
         val (screenW, screenH) = getDisplayBounds(context)
 
         return when (action) {
-            "tap", "click" -> {
-                val rawX = if (o.has("x")) o.getInt("x") else null
-                val rawY = if (o.has("y")) o.getInt("y") else null
-                if (rawX == null || rawY == null) {
-                    return ToolExecutionResult("Error: 'x' and 'y' are required for tap", false, toolTitle = toolTitle)
-                }
-                val (realX, realY) = normalizeCoords(rawX, rawY, screenW, screenH)
+            "click", "tap" -> {
+                val (realX, realY, rawX, rawY) = resolveCoordsFromInput(o, screenW, screenH)
+                    ?: return ToolExecutionResult("Error: target required (specify 'element', 'point', or 'x' and 'y')", false, toolTitle = toolTitle)
+
                 val actRes = performTap(realX, realY, context, backendPref)
                 if (!actRes.success) {
                     return ToolExecutionResult(actRes.toErrorJson().toString(2), false, toolTitle = toolTitle)
@@ -218,13 +223,10 @@ object ScreenTool {
                 }
             }
 
-            "double_tap" -> {
-                val rawX = if (o.has("x")) o.getInt("x") else null
-                val rawY = if (o.has("y")) o.getInt("y") else null
-                if (rawX == null || rawY == null) {
-                    return ToolExecutionResult("Error: 'x' and 'y' are required for double_tap", false, toolTitle = toolTitle)
-                }
-                val (realX, realY) = normalizeCoords(rawX, rawY, screenW, screenH)
+            "double_click", "double_tap" -> {
+                val (realX, realY, rawX, rawY) = resolveCoordsFromInput(o, screenW, screenH)
+                    ?: return ToolExecutionResult("Error: target required for double_click", false, toolTitle = toolTitle)
+
                 val actRes = performDoubleTap(realX, realY, context, backendPref)
                 if (!actRes.success) {
                     return ToolExecutionResult(actRes.toErrorJson().toString(2), false, toolTitle = toolTitle)
@@ -242,13 +244,10 @@ object ScreenTool {
             }
 
             "long_press" -> {
-                val rawX = if (o.has("x")) o.getInt("x") else null
-                val rawY = if (o.has("y")) o.getInt("y") else null
-                if (rawX == null || rawY == null) {
-                    return ToolExecutionResult("Error: 'x' and 'y' are required for long_press", false, toolTitle = toolTitle)
-                }
+                val (realX, realY, rawX, rawY) = resolveCoordsFromInput(o, screenW, screenH)
+                    ?: return ToolExecutionResult("Error: target required for long_press", false, toolTitle = toolTitle)
+
                 val durationMs = o.optLong("duration_ms", 800L).coerceIn(200L, 5000L)
-                val (realX, realY) = normalizeCoords(rawX, rawY, screenW, screenH)
                 val actRes = performLongPress(realX, realY, durationMs, context, backendPref)
                 if (!actRes.success) {
                     return ToolExecutionResult(actRes.toErrorJson().toString(2), false, toolTitle = toolTitle)
@@ -265,21 +264,22 @@ object ScreenTool {
                 }
             }
 
-            "swipe" -> {
-                val rawX = if (o.has("x")) o.getInt("x") else null
-                val rawY = if (o.has("y")) o.getInt("y") else null
+            "swipe", "drag" -> {
+                val startCoords = resolveCoordsFromInput(o, screenW, screenH)
                 val rawToX = if (o.has("to_x")) o.getInt("to_x") else null
                 val rawToY = if (o.has("to_y")) o.getInt("to_y") else null
 
-                if (rawX == null || rawY == null || rawToX == null || rawToY == null) {
-                    return ToolExecutionResult("Error: 'x', 'y', 'to_x', 'to_y' are required for swipe", false, toolTitle = toolTitle)
+                val targetCoords = if (rawToX != null && rawToY != null) {
+                    val (rx, ry) = normalizeCoords(rawToX, rawToY, screenW, screenH)
+                    QuadCoords(rx, ry, rawToX, rawToY)
+                } else null
+
+                if (startCoords == null || targetCoords == null) {
+                    return ToolExecutionResult("Error: swipe requires start coords ('x', 'y' or 'point') and target ('to_x', 'to_y')", false, toolTitle = toolTitle)
                 }
 
                 val durationMs = o.optLong("duration_ms", DEFAULT_SWIPE_DURATION_MS).coerceIn(50L, 5000L)
-                val (realStartX, realStartY) = normalizeCoords(rawX, rawY, screenW, screenH)
-                val (realEndX, realEndY) = normalizeCoords(rawToX, rawToY, screenW, screenH)
-
-                val actRes = performSwipe(realStartX, realStartY, realEndX, realEndY, durationMs, context, backendPref)
+                val actRes = performSwipe(startCoords.realX, startCoords.realY, targetCoords.realX, targetCoords.realY, durationMs, context, backendPref)
                 if (!actRes.success) {
                     return ToolExecutionResult(actRes.toErrorJson().toString(2), false, toolTitle = toolTitle)
                 }
@@ -287,8 +287,8 @@ object ScreenTool {
                 if (settleMs > 0) sleepQuietly(settleMs)
 
                 val details = JSONObject().apply {
-                    put("from", JSONObject().put("x", rawX).put("y", rawY).put("real_x", realStartX).put("real_y", realStartY))
-                    put("to", JSONObject().put("x", rawToX).put("y", rawToY).put("real_x", realEndX).put("real_y", realEndY))
+                    put("from", JSONObject().put("x", startCoords.normX).put("y", startCoords.normY).put("real_x", startCoords.realX).put("real_y", startCoords.realY))
+                    put("to", JSONObject().put("x", targetCoords.normX).put("y", targetCoords.normY).put("real_x", targetCoords.realX).put("real_y", targetCoords.realY))
                     put("duration_ms", durationMs)
                     put("backend", actRes.backend)
                     put("settle_ms", settleMs)
@@ -333,6 +333,14 @@ object ScreenTool {
                 if (text.isEmpty()) {
                     return ToolExecutionResult("Error: 'text' is required for type action", false, toolTitle = toolTitle)
                 }
+
+                // If element was passed, tap it first to ensure focus
+                val targetCoords = resolveCoordsFromInput(o, screenW, screenH)
+                if (targetCoords != null) {
+                    performTap(targetCoords.realX, targetCoords.realY, context, backendPref)
+                    sleepQuietly(200)
+                }
+
                 val actRes = performType(text, context, backendPref)
                 if (!actRes.success) {
                     return ToolExecutionResult(actRes.toErrorJson().toString(2), false, toolTitle = toolTitle)
@@ -354,7 +362,7 @@ object ScreenTool {
                 }
             }
 
-            "key" -> {
+            "press_key", "key" -> {
                 val key = o.optString("key", "")
                 if (key.isEmpty()) {
                     return ToolExecutionResult("Error: 'key' is required for key action", false, toolTitle = toolTitle)
@@ -391,9 +399,20 @@ object ScreenTool {
                 }
             }
 
+            "takeover", "call_user" -> {
+                val message = o.optString("message", "请在手机上完成敏感操作（如滑块验证码、指纹或支付密码），完成后回复继续。")
+                val out = JSONObject().apply {
+                    put("ok", true)
+                    put("action", "takeover")
+                    put("status", "waiting_user_takeover")
+                    put("message", message)
+                }
+                ToolExecutionResult(out.toString(2), true, toolTitle = toolTitle)
+            }
+
             else -> {
                 ToolExecutionResult(
-                    output = "Error: unknown action '$action'. Known actions: capture, tap, double_tap, long_press, swipe, scroll, type, key, wait",
+                    output = "Error: unknown action '$action'. Known actions: click, double_click, long_press, swipe, scroll, type, press_key, wait, takeover",
                     success = false,
                     toolTitle = toolTitle,
                 )
@@ -401,51 +420,45 @@ object ScreenTool {
         }
     }
 
-    /**
-     * Adaptor for callers forwarding from AndroidTool:
-     * `android(action="screen", args="capture")` or `android(action="screen", args="tap 500 500")`
-     */
-    fun executeViaAndroidTool(action: String, argsStr: String, sessionId: String?, context: Context): ToolExecutionResult {
-        val tokens = argsStr.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-        val effectiveAction = if (action in setOf("screen_capture", "screen_touch", "screen_tap")) {
-            action.removePrefix("screen_")
-        } else {
-            tokens.firstOrNull()?.lowercase() ?: "capture"
+    private data class QuadCoords(val realX: Int, val realY: Int, val normX: Int, val normY: Int)
+
+    private fun resolveCoordsFromInput(o: JSONObject, screenW: Int, screenH: Int): QuadCoords? {
+        if (o.has("element")) {
+            val elemId = o.getInt("element")
+            val elem = lastPerceivedElements[elemId] ?: return null
+            val rx = elem.bounds.centerX().coerceIn(0, screenW)
+            val ry = elem.bounds.centerY().coerceIn(0, screenH)
+            return QuadCoords(rx, ry, elem.centerNormalized.first, elem.centerNormalized.second)
         }
 
-        val rest = if (action == "screen" && tokens.isNotEmpty()) tokens.drop(1) else tokens
-        val obj = JSONObject().put("action", effectiveAction).put("tool_title", "Screen $effectiveAction")
-
-        when (effectiveAction) {
-            "tap", "click", "double_tap" -> {
-                if (rest.size >= 2) {
-                    obj.put("x", rest[0].toIntOrNull() ?: 500)
-                    obj.put("y", rest[1].toIntOrNull() ?: 500)
-                }
-            }
-            "swipe" -> {
-                if (rest.size >= 4) {
-                    obj.put("x", rest[0].toIntOrNull() ?: 500)
-                    obj.put("y", rest[1].toIntOrNull() ?: 700)
-                    obj.put("to_x", rest[2].toIntOrNull() ?: 500)
-                    obj.put("to_y", rest[3].toIntOrNull() ?: 300)
-                }
-            }
-            "scroll" -> {
-                if (rest.isNotEmpty()) obj.put("direction", rest[0])
-            }
-            "type" -> {
-                obj.put("text", rest.joinToString(" "))
-            }
-            "key" -> {
-                if (rest.isNotEmpty()) obj.put("key", rest[0])
-            }
-            "wait" -> {
-                if (rest.isNotEmpty()) obj.put("duration_ms", rest[0].toLongOrNull() ?: 1000L)
+        if (o.has("point")) {
+            val pt = parsePoint(o.opt("point"))
+            if (pt != null) {
+                val (rx, ry) = normalizeCoords(pt.first, pt.second, screenW, screenH)
+                return QuadCoords(rx, ry, pt.first, pt.second)
             }
         }
 
-        return execute(obj.toString(), sessionId, context)
+        val rawX = if (o.has("x")) o.getInt("x") else null
+        val rawY = if (o.has("y")) o.getInt("y") else null
+        if (rawX != null && rawY != null) {
+            val (rx, ry) = normalizeCoords(rawX, rawY, screenW, screenH)
+            return QuadCoords(rx, ry, rawX, rawY)
+        }
+
+        return null
+    }
+
+    fun parsePoint(pointVal: Any?): Pair<Int, Int>? {
+        if (pointVal == null) return null
+        if (pointVal is JSONArray && pointVal.length() >= 2) {
+            return Pair(pointVal.getInt(0), pointVal.getInt(1))
+        }
+        val str = pointVal.toString().trim()
+        val match = Regex("(\\d+)\\s*[,\\s]\\s*(\\d+)").find(str) ?: return null
+        val x = match.groupValues[1].toIntOrNull() ?: return null
+        val y = match.groupValues[2].toIntOrNull() ?: return null
+        return Pair(x, y)
     }
 
     // ── Screen Dimension & Coordinates ────────────────────────────────────
@@ -462,9 +475,6 @@ object ScreenTool {
         return Pair(dm.widthPixels, dm.heightPixels)
     }
 
-    /**
-     * Translates normalized coordinates (0..1000) or passes through absolute pixel coordinates.
-     */
     fun normalizeCoords(x: Int, y: Int, screenW: Int, screenH: Int): Pair<Int, Int> {
         val realX = if (x in 0..1000) {
             (x.toFloat() / 1000f * screenW).roundToInt().coerceIn(0, screenW)
@@ -477,6 +487,126 @@ object ScreenTool {
             y.coerceIn(0, screenH)
         }
         return Pair(realX, realY)
+    }
+
+    // ── Visual Grounding & SoM (Set-of-Marks) ─────────────────────────────
+
+    fun detectInteractiveElements(context: Context, screenW: Int, screenH: Int): List<DetectedElement> {
+        val a11y = MinisAccessibilityService.getInstance() ?: return emptyList()
+        val roots = a11y.rootNodes()
+        if (roots.isEmpty()) return emptyList()
+
+        val rawElements = mutableListOf<DetectedElement>()
+        val seenRects = mutableSetOf<String>()
+
+        fun walk(node: AccessibilityNodeInfo?, depth: Int) {
+            if (node == null || depth > 20 || rawElements.size >= 60) return
+            try {
+                if (!node.isVisibleToUser) return
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+
+                if (rect.width() > 10 && rect.height() > 10 &&
+                    rect.left < screenW && rect.top < screenH && rect.right > 0 && rect.bottom > 0 &&
+                    !(rect.width() >= screenW && rect.height() >= screenH)
+                ) {
+                    val isInteractive = node.isClickable || node.isLongClickable || node.isCheckable || node.isEditable
+                    val text = node.text?.toString()?.trim() ?: ""
+                    val desc = node.contentDescription?.toString()?.trim() ?: ""
+
+                    if (isInteractive || text.isNotEmpty() || desc.isNotEmpty()) {
+                        val key = "${rect.left},${rect.top},${rect.right},${rect.bottom}"
+                        if (seenRects.add(key)) {
+                            val normX = (rect.centerX().toFloat() / screenW * 1000f).roundToInt().coerceIn(0, 1000)
+                            val normY = (rect.centerY().toFloat() / screenH * 1000f).roundToInt().coerceIn(0, 1000)
+                            rawElements.add(
+                                DetectedElement(
+                                    id = 0,
+                                    text = text,
+                                    contentDesc = desc,
+                                    className = node.className?.toString() ?: "",
+                                    bounds = rect,
+                                    centerNormalized = Pair(normX, normY),
+                                    clickable = isInteractive,
+                                )
+                            )
+                        }
+                    }
+                }
+
+                for (i in 0 until node.childCount) {
+                    walk(node.getChild(i), depth + 1)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "error walking a11y node", e)
+            }
+        }
+
+        for (root in roots) {
+            walk(root, 0)
+        }
+
+        rawElements.sortWith(compareBy({ it.bounds.top / 40 }, { it.bounds.left }))
+
+        return rawElements.mapIndexed { idx, elem ->
+            elem.copy(id = idx + 1)
+        }
+    }
+
+    fun overlaySetOfMarks(
+        bitmap: Bitmap,
+        elements: List<DetectedElement>,
+        screenW: Int,
+        screenH: Int,
+    ): Bitmap {
+        if (elements.isEmpty()) return bitmap
+
+        val scaleX = bitmap.width.toFloat() / screenW
+        val scaleY = bitmap.height.toFloat() / screenH
+
+        val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true) ?: return bitmap
+        val canvas = Canvas(mutableBitmap)
+
+        val boxPaint = Paint().apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 3f
+            color = Color.argb(220, 255, 45, 85)
+        }
+
+        val badgeBgPaint = Paint().apply {
+            style = Paint.Style.FILL
+            color = Color.argb(230, 20, 20, 20)
+        }
+
+        val textPaint = Paint().apply {
+            style = Paint.Style.FILL
+            color = Color.WHITE
+            textSize = 22f
+            isFakeBoldText = true
+            textAlign = Paint.Align.CENTER
+        }
+
+        for (elem in elements) {
+            val left = elem.bounds.left * scaleX
+            val top = elem.bounds.top * scaleY
+            val right = elem.bounds.right * scaleX
+            val bottom = elem.bounds.bottom * scaleY
+
+            canvas.drawRect(left, top, right, bottom, boxPaint)
+
+            val idText = elem.id.toString()
+            val badgeWidth = (idText.length * 14f + 16f).coerceAtLeast(32f)
+            val badgeHeight = 24f
+
+            val badgeLeft = left.coerceIn(0f, (bitmap.width - badgeWidth))
+            val badgeTop = (top - badgeHeight).coerceAtLeast(0f)
+            val badgeRect = RectF(badgeLeft, badgeTop, badgeLeft + badgeWidth, badgeTop + badgeHeight)
+
+            canvas.drawRoundRect(badgeRect, 6f, 6f, badgeBgPaint)
+            canvas.drawText(idText, badgeRect.centerX(), badgeRect.centerY() + 7f, textPaint)
+        }
+
+        return mutableBitmap
     }
 
     // ── Screenshot Capture ────────────────────────────────────────────────
@@ -495,6 +625,7 @@ object ScreenTool {
         backendPref: String,
         toolTitle: String,
         extraData: JSONObject? = null,
+        enableSom: Boolean = true,
     ): ToolExecutionResult {
         val capResult = captureRawBitmap(context, backendPref)
         val rawBitmap = capResult.bitmap
@@ -512,17 +643,34 @@ object ScreenTool {
 
         val origW = rawBitmap.width
         val origH = rawBitmap.height
+        val (screenW, screenH) = getDisplayBounds(context)
+        val baseW = if (screenW > 0) screenW else origW
+        val baseH = if (screenH > 0) screenH else origH
 
-        // Scale to token budget
-        val scaledBitmap = if (origW > maxEdge || origH > maxEdge) {
-            val scale = maxEdge.toFloat() / maxOf(origW, origH)
-            val sw = (origW * scale).roundToInt().coerceAtLeast(1)
-            val sh = (origH * scale).roundToInt().coerceAtLeast(1)
-            Bitmap.createScaledBitmap(rawBitmap, sw, sh, true).also {
-                if (it !== rawBitmap) rawBitmap.recycle()
-            }
+        // Visual Grounding: detect interactive elements via Accessibility
+        val detected = detectInteractiveElements(context, baseW, baseH)
+        lastPerceivedElements.clear()
+        detected.forEach { lastPerceivedElements[it.id] = it }
+
+        // Overlay Set-of-Marks if requested and elements found
+        val markedBitmap = if (enableSom && detected.isNotEmpty()) {
+            val overlaid = overlaySetOfMarks(rawBitmap, detected, baseW, baseH)
+            if (overlaid !== rawBitmap) rawBitmap.recycle()
+            overlaid
         } else {
             rawBitmap
+        }
+
+        // Scale to token budget
+        val scaledBitmap = if (markedBitmap.width > maxEdge || markedBitmap.height > maxEdge) {
+            val scale = maxEdge.toFloat() / maxOf(markedBitmap.width, markedBitmap.height)
+            val sw = (markedBitmap.width * scale).roundToInt().coerceAtLeast(1)
+            val sh = (markedBitmap.height * scale).roundToInt().coerceAtLeast(1)
+            Bitmap.createScaledBitmap(markedBitmap, sw, sh, true).also {
+                if (it !== markedBitmap) markedBitmap.recycle()
+            }
+        } else {
+            markedBitmap
         }
 
         val baos = ByteArrayOutputStream()
@@ -550,9 +698,15 @@ object ScreenTool {
         val linuxPath = "/var/minis/attachments/screenshots/$filename"
         val minisUrl = "minis://attachments/screenshots/$filename"
 
+        val elementsJson = JSONArray()
+        detected.forEach { elementsJson.put(it.toJson()) }
+
         val json = JSONObject().apply {
             put("ok", true)
             put("action", "capture")
+            put("som_enabled", enableSom && detected.isNotEmpty())
+            put("elements_count", detected.size)
+            if (detected.isNotEmpty()) put("elements", elementsJson)
             put("display", JSONObject().apply {
                 put("width", origW)
                 put("height", origH)
@@ -578,7 +732,6 @@ object ScreenTool {
     }
 
     private fun captureRawBitmap(context: Context, backendPref: String): ScreenCaptureResult {
-        // Priority order based on backendPref
         val backendsToTry = when (backendPref) {
             "a11y" -> listOf("a11y")
             "root" -> listOf("root")
@@ -798,7 +951,7 @@ object ScreenTool {
                 (screenW * 0.8f).roundToInt(),
                 (screenH * 0.5f).roundToInt(),
             )
-            else -> arrayOf( // "down" (default): scroll down content (drag finger up)
+            else -> arrayOf(
                 (screenW * 0.5f).roundToInt(),
                 (screenH * 0.75f).roundToInt(),
                 (screenW * 0.5f).roundToInt(),
@@ -832,7 +985,7 @@ object ScreenTool {
                 "a11y" -> {
                     val a11y = MinisAccessibilityService.getInstance()
                     if (a11y != null) {
-                        val focused = a11y.rootInActiveWindow?.findFocus(android.view.accessibility.AccessibilityNodeInfo.FOCUS_INPUT)
+                        val focused = a11y.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
                         if (focused != null && focused.isEditable) {
                             if (a11y.setNodeText(focused, text)) return ScreenActionResult(true, "a11y")
                         }

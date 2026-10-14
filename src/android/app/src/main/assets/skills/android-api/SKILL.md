@@ -1,39 +1,92 @@
 ---
 name: android-api
-description: How to drive the Android device through the `android` tool: packages, settings, notifications, alarms, input, media, and the Shizuku/root privileged backends. Read this when a request needs something the Linux sandbox cannot reach.
+description: How to control and automate the Android device via Root bash and Doubao/UI-TARS Visual Grounding (screen_view, screen_touch). Read this when a task needs to interact with the Android host system, apps, or screen.
 ---
 
-## The `android` tool
+## Android Architecture Overview
 
-The shell sandbox is an isolated Alpine container with no view of Android. Anything that
-touches the device goes through the `android` tool instead:
+Minis provides an atomic, high-performance tool surface tailored for Android geeks and power users:
 
+1. **Host Privilege & System Operations**: `bash(command="...", as_root=true)`
+2. **Visual Grounding & Screen Automation**: `screen_view` and `screen_touch` (aligned with Doubao Phone Assistant / UI-TARS)
+3. **Sandbox Browser**: `browser_use` for isolated web tasks
+4. **File & Container Operations**: `bash(command="...", as_root=false)`, `read`, `write`, `edit`
+
+---
+
+## 1. Privileged Host Operations (`bash as_root`)
+
+To interact with the Android OS, system settings, package manager, activity manager, or filesystem outside the Linux container, use `bash` with `as_root: true`:
+
+```json
+{
+  "tool_title": "Inspect installed packages",
+  "command": "pm list packages -3",
+  "as_root": true
+}
 ```
-android(action="<action>", args="<arguments>")
-android --help <action>   # arguments for one action
-android --help           # list every action
+
+### Common Root Commands:
+- **Package Manager (`pm`)**:
+  - List third-party apps: `pm list packages -3`
+  - Get APK path: `pm path com.example.app`
+  - Force stop app: `am force-stop com.example.app`
+  - Clear app data: `pm clear com.example.app`
+  - Launch app: `monkey -p com.example.app -c android.intent.category.LAUNCHER 1` or `am start -n <package>/<activity>`
+- **System Properties & Diagnostics**:
+  - Properties: `getprop ro.build.version.release`, `getprop ro.product.model`
+  - Battery stats: `dumpsys battery`
+  - Diagnostics: `logcat -d -t 100`, `dumpsys meminfo <package>`
+- **Host Filesystem**:
+  - Direct access to `/data/data/<package>/` (e.g. app databases, preferences)
+  - `/sdcard/` / `/storage/emulated/0/` access
+
+> [!NOTE]
+> Root execution is protected by `RootCommandGuard` (blocking brick commands like `/dev/block` wipes) and session-level user confirmation cards.
+
+---
+
+## 2. Visual Grounding & Screen Automation (`screen_view` & `screen_touch`)
+
+Aligned with Doubao Phone Assistant (豆包手机助手) and UI-TARS.
+
+### Screen Perception (`screen_view`)
+Captures the current screen. Automatically selects the best backend (Root `screencap`, Shizuku, or AccessibilityService).
+
+```json
+{
+  "tool_title": "Perceive current screen",
+  "som": true
+}
 ```
 
-Arguments are a single space-separated string. Each action below keeps the argument
-syntax of the command it replaced, so the examples read exactly as they always did.
+- **Set-of-Marks (`som: true`, default)**:
+  - Scans interactive UI elements using Accessibility hierarchy.
+  - Draws high-contrast numbered tags (`[1]`, `[2]`, ...) on the screenshot bitmap.
+  - Returns the tagged image together with a structured list of detected elements (`id`, `text`, `desc`, `center`, `bounds`).
+  - Perfect for general multimodal models (GPT-4o, Claude 3.5, Gemini 1.5): the model can simply target elements by ID (e.g. `element: 3`).
+- **Clean Screenshot (`som: false`)**:
+  - Returns raw, untagged screenshot.
+  - Ideal for native GUI grounding models (e.g. UI-TARS, Qwen2-VL) that output coordinates directly.
 
-## Actions
+### Precision Interaction (`screen_touch`)
+Executes physical touch gestures, text entry, navigation, or pauses for user assistance.
 
-- android-alarm — schedule alarms/timers in the system Clock app (`schedule <HH:MM> --label <L> [--repeat ONCE|DAILY|WEEKDAYS]`, `timer <seconds> --label <L>`, `open`). Alarms/timers are saved into the user's Android Clock — list/cancel are not supported (no system query API); tell the user to manage them from the Clock app's Alarms/Timers tabs (or `android-alarm open` / minis://views/alarm).
-- android-calendar — read/write the device calendar (`list --start YYYY-MM-DD [--end ...] [--max N]`; `create --title <T> --start <ISO> [--end <ISO>] [--description <D>] [--location <L>] [--all-day]`).
-- android-clipboard — `get | set <text> [--label L] | clear`.
-- android-contacts — `list [--max N] | search <query> [--max N] | get <id> | delete <id>`. Requires READ_CONTACTS (delete also needs WRITE_CONTACTS).
-- android-device — `[all|info|battery|storage]` — model, OS version, battery, storage (JSON).
-- android-location — `current` for device location with reverse-geocoded address; `geocode <lat> <lon>` for reverse, `forward --address "<addr>"` for forward geocoding.
-- android-notification — `send --title <T> [--body <B>] | clear | list [--max N]`. `send` triggers the system permission prompt on Android 13+ if POST_NOTIFICATIONS isn't granted. `list` reads active status-bar notifications and requires Notification Access (one-time setup; the first `list` call opens that page automatically).
-- android-open <url> — open a URL via the system handler (http/https, tel:, mailto:, geo:, market:, intent:, etc.). Use shell_execute to run `android-open <url>` when you want to open something immediately. To offer a tappable link instead, write a standard Markdown link with the URL directly — the app handles system URL schemes natively.
-- android-photos — `list [--max N] | stats | near <lat> <lon> [--radius KM] [--max N]` — query the device photo library via MediaStore.
-- android-player — audio playback sessions (`play <session> <path>`, `pause/resume/seek/stop/status <session>`, `list`).
-- android-speak — device TTS (`<text> [--rate F] [--pitch F] [--volume F]`; `--stop | --status`).
-- android-speech — microphone transcription (`listen [--language BCP47] [--max N] [--timeout SEC]`; `status`). Requires RECORD_AUDIO.
-- android-weather <latitude> <longitude> — Open-Meteo forecast (current + hourly + daily). No API key needed.
-- android-shizuku-cli — invoke privileged Android system APIs (package management, settings, system commands) via Shizuku when granted. Curated subcommands return structured JSON; for anything not covered, fall back to `android-shizuku-cli exec <any shell command>` which runs the command via `sh -c` with Shizuku privilege (same surface as `adb shell`). Run with no args (or --help) for the subcommand list.
-- android-root-cli — run privileged commands with a superuser grant (UID 0) via `bash(command="...", as_root=true)` or `android(action="root", args="<command>")`. Reaches full `/data`, other apps' private databases, system properties, and deep diagnostics (`logcat`, `dumpsys`, `getprop`). Both stdout and stderr are returned in structured JSON. **Authorization:** In chat sessions, root commands trigger an interactive confirmation card showing the exact command with options to `Allow once`, `Allow in this session`, or `Deny`. If the session is pre-authorized (via `/root` slash command or the chat menu), commands execute directly. **Safety:** RootCommandGuard unconditionally blocks raw block device writes (`/dev/block`), mass partition wipes (`rm -rf /data`), and destructive system partition remounts.
-- android-a11y-cli — drive system UI (read screen, tap, type, swipe, scroll) via the Android AccessibilityService when enabled. Run with no args (or --help) for the subcommand list.
-- android-screen — physical screen automation via dedicated tools (`screen_view` for screenshot perception, `screen_touch` for physical interactions) or `android(action="screen", args="<subcommand>")`. Actions: `screen_view` (take screenshot and return image data directly to the vision model), `screen_touch` with `tap <x> <y>` (relative 0~1000 coordinates), `double_tap <x> <y>`, `long_press <x> <y>`, `swipe <x1> <y1> <x2> <y2>`, `scroll <up|down|left|right>`, `type <text>`, `key <back|home|recents|enter|delete>`, and `wait <ms>`. Supports `--settle-ms` to wait for UI rendering and `capture_after: true` to get the updated screenshot immediately in the same turn. Auto-selects Root, Shizuku, or AccessibilityService based on device availability.
+Targeting options:
+1. **By Element ID**: `element: 3` (from previous `screen_view` SoM)
+2. **By UI-TARS Point**: `point: "[523, 814]"` (normalized 0~1000 scale)
+3. **By Coordinates**: `x: 523, y: 814` (normalized 0~1000 scale)
 
+Supported actions:
+- `click` / `tap`: Tap an element or coordinate.
+- `double_click` / `double_tap`: Quick double tap.
+- `long_press`: Long press (specify `duration_ms`, default 800ms).
+- `swipe`: Drag from `(x, y)` to `(to_x, to_y)`.
+- `scroll`: Scroll in container (`direction: "up"|"down"|"left"|"right"`).
+- `type`: Type text into the active field (`text: "..."`).
+- `press_key`: System keys (`key: "back"|"home"|"recents"|"enter"|"delete"|"volume_up"|"volume_down"`).
+- `wait`: Pause for UI rendering or animation (`duration_ms: 1000`).
+- `takeover`: Human-in-the-loop handoff. Pauses execution when encountering CAPTCHAs, SMS OTPs, or biometric auth, requesting the user to handle it before resuming.
+
+### Instant Visual Verification (`capture_after: true`)
+Set `capture_after: true` on any `screen_touch` action to immediately capture and return the updated screen in the same turn, reducing roundtrips.
