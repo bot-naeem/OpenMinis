@@ -16,7 +16,10 @@ object RootAccess {
     /**
      * Result of executing a command via superuser grant.
      */
-    data class SuResult(
+    // Deliberately not a `data class`: that would auto-generate component1..3 in
+    // declaration order and clash with the hand-written ones below. The order the
+    // old `Pair<String?, Int>` return type destructured as has to be preserved.
+    class SuResult(
         val stdout: String,
         val stderr: String,
         val exitCode: Int,
@@ -28,6 +31,9 @@ object RootAccess {
         operator fun component1(): String? = stdoutFirstLine
         operator fun component2(): Int = exitCode
         operator fun component3(): String = stderr
+
+        override fun toString(): String =
+            "SuResult(exitCode=$exitCode, stdout=${stdout.take(120)}, stderr=${stderr.take(120)})"
     }
 
     /** Paths a superuser binary is known to use across common root solutions. */

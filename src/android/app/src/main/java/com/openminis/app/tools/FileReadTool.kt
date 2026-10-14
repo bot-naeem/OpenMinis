@@ -4,6 +4,7 @@ import android.content.Context
 import com.openminis.app.data.model.AgentToolDefinition
 import com.openminis.app.data.model.AgentToolParam
 import com.openminis.app.sandbox.PRootKernel
+import com.openminis.app.sandbox.RootAccess
 import org.json.JSONObject
 import java.io.File
 
