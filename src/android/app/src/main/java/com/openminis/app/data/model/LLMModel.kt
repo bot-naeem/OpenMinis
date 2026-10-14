@@ -411,7 +411,7 @@ data class LLMModel(
         }
         if (missing.isNotEmpty()) {
             sb.append("You cannot natively process ").append(missing.joinToString(", "))
-            sb.append(" — for those formats, call shell_execute with ffmpeg or similar tools to extract text/metadata first.")
+            sb.append(" — for those formats, call bash with ffmpeg or similar tools to extract text/metadata first.")
         }
         return sb.toString().trim().ifEmpty { null }
     }

@@ -90,7 +90,7 @@ class ScheduledPrefillWiringTest {
         assertFalse(vm.contains("`delay` is your ONLY wait mechanism"))
         assertFalse(vm.contains("they do not wake you"))
         // [T-prompt-cli-via-shell] CLI commands are phrased as "run X via
-        // shell_execute", never as something to "use" like a tool (a model
+        // bash", never as something to "use" like a tool (a model
         // once called minis-scheduled as a function tool: Unknown tool).
         // [T-android-tool-surface] The minis-scheduled CLI documentation moved
         // out of the system prompt and into assets/skills/minis-control, so the
@@ -99,9 +99,7 @@ class ScheduledPrefillWiringTest {
         // The *scheduling policy* paragraph stays in the prompt — it changes how
         // the agent reasons, not just how it spells a command. Only the CLI
         // reference moved to assets/skills/minis-control.
-        assertTrue(vm.contains("For a check that should happen AFTER this turn ends, register it by running `minis-scheduled create …` via shell_execute"))
-        assertTrue(vm.contains("either register a `minis-scheduled` follow-up (say so, with its task id)"))
-        assertTrue(vm.contains("For follow-ups and recurring prompts, run `minis-scheduled create …` via shell_execute: it fires through a system alarm"))
+        assertTrue(vm.contains("For follow-ups and recurring prompts, run `minis-scheduled create …` via bash: it fires through a system alarm"))
         val scheduledDoc = ProductionSources.readSkill("minis-control/SKILL.md")
         assertFalse(scheduledDoc.contains("Do NOT use minis-scheduled"))
         assertFalse(scheduledDoc.contains("Use `minis-model-use list`"))
