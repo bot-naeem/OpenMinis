@@ -22,6 +22,7 @@ enum class ProviderType(val displayName: String) {
     // OpenAI-compatible upstream at api.kimi.com/coding/v1. DB round-trip is
     // name-based (ProviderCredential.valueOf), so appending is migration-safe.
     kimiCode("Kimi Code"),
+    glm("智谱 GLM"),
 
     /**
      * [T-copilot-provider] GitHub Copilot via device-flow OAuth. Chat is
@@ -86,7 +87,7 @@ enum class ProviderType(val displayName: String) {
         get() = when (this) {
             // openAIResponses included: it routes through the OpenAI provider
             // with the Responses endpoint forced on.
-            anthropic, gemini, openAI, openRouter, xAI, kimiCode, openAIResponses,
+            anthropic, gemini, openAI, openRouter, xAI, kimiCode, glm, openAIResponses,
             githubCopilot -> true
             antigravity, unsupported -> false
         }
@@ -99,6 +100,7 @@ enum class ProviderType(val displayName: String) {
             openRouter -> LLMModel.allOpenRouter
             xAI -> LLMModel.allXAI
             kimiCode -> LLMModel.allKimi
+            glm -> LLMModel.allGlm
             // No built-in catalog for the decode-only types; models restored
             // alongside the instance still appear as custom entries.
             // [T-copilot-provider] Copilot's catalog is fetched live from

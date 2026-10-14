@@ -183,6 +183,7 @@ private val providerDisplayOrder = listOf(
     ProviderType.openAI,
     ProviderType.anthropic,
     ProviderType.gemini,
+    ProviderType.glm,
     ProviderType.xAI,
     ProviderType.kimiCode,
     ProviderType.openRouter,
@@ -200,6 +201,7 @@ private fun providerIcon(type: ProviderType): Pair<ImageVector, Color> = when (t
     ProviderType.openAI -> Icons.Default.Hub to Color(0xFF4CAF50)           // green
     ProviderType.anthropic -> Icons.Default.AutoAwesome to Color(0xFFAB47BC) // purple
     ProviderType.gemini -> Icons.Default.Diamond to Color(0xFF42A5F5)        // blue
+    ProviderType.glm -> Icons.Default.AutoAwesome to Color(0xFF2563EB)       // royal blue
     ProviderType.openRouter -> Icons.Default.AltRoute to Color(0xFF00BCD4)    // cyan
     ProviderType.xAI -> Icons.Default.FlashOn to Color(0xFFFF7043)           // orange — Grok visual cue
     // [T-kimi-oauth] Indigo — matches iOS's Kimi accent.
@@ -220,7 +222,8 @@ private fun availableCredentials(type: ProviderType): List<ProviderCredential> {
         ProviderType.openRouter -> listOf(ProviderCredential.apiKey, ProviderCredential.oauth)
         ProviderType.anthropic,
         ProviderType.openAI -> listOf(ProviderCredential.apiKey, ProviderCredential.oauth)
-        ProviderType.gemini -> listOf(ProviderCredential.apiKey)
+        ProviderType.gemini,
+        ProviderType.glm -> listOf(ProviderCredential.apiKey)
         // xAI Grok primarily targets SuperGrok / X Premium+ OAuth, but also
         // offers a plain API key path (api.x.ai). Mirror OpenAI's pattern
         // of exposing both so users on tiers without OAuth API access can
@@ -282,6 +285,7 @@ private fun ChooseProviderScreen(
                     ProviderType.openAI -> "OpenAI / Compatible API"
                     ProviderType.anthropic -> "Anthropic / Compatible API"
                     ProviderType.gemini -> "Google Gemini"
+                    ProviderType.glm -> "智谱 GLM (AutoGLM)"
                     ProviderType.openRouter -> "OpenRouter"
                     ProviderType.xAI -> "xAI (Grok)"
                     ProviderType.kimiCode -> "Kimi Code"
@@ -298,6 +302,7 @@ private fun ChooseProviderScreen(
                     ProviderType.openAI -> R.string.add_provider_subtitle_openai
                     ProviderType.anthropic -> R.string.add_provider_subtitle_anthropic
                     ProviderType.gemini -> R.string.add_provider_subtitle_gemini
+                    ProviderType.glm -> R.string.add_provider_subtitle_glm
                     ProviderType.openRouter -> R.string.add_provider_subtitle_openrouter
                     ProviderType.xAI -> R.string.add_provider_subtitle_xai
                     ProviderType.kimiCode -> R.string.add_provider_subtitle_kimi
@@ -403,6 +408,7 @@ private fun apiKeyDescription(type: ProviderType): String = when (type) {
     ProviderType.openAI -> "Supports OpenAI official API and compatible third-party endpoints"
     ProviderType.anthropic -> "Use an API key from your Anthropic account"
     ProviderType.gemini -> "Use an API key from your Google Gemini account"
+    ProviderType.glm -> "Use an API key from your Zhipu AI BigModel account (open.bigmodel.cn)"
     ProviderType.openRouter -> "Use an API key from your OpenRouter account"
     ProviderType.xAI -> "Use an API key from your xAI Console (api.x.ai)"
     ProviderType.kimiCode -> "Use an API key from your Moonshot account"
@@ -423,6 +429,7 @@ private fun oauthDescription(type: ProviderType): String = when (type) {
     ProviderType.kimiCode -> "Sign in with your Kimi account (Coding Plan)"
     ProviderType.githubCopilot -> "Sign in with GitHub (requires a Copilot subscription)"
     ProviderType.openAIResponses -> "Sign in with OpenAI Codex"
+    ProviderType.glm,
     ProviderType.antigravity,
     ProviderType.unsupported -> "This provider type is not supported on Android"
 }
@@ -471,7 +478,12 @@ private fun ConfigureProviderScreen(
         if (!labelEdited) label = defaultLabel
     }
     var apiKey by remember { mutableStateOf("") }
-    var customBaseURL by remember { mutableStateOf(voiceTemplate?.baseURL ?: "") }
+    var customBaseURL by remember {
+        mutableStateOf(
+            voiceTemplate?.baseURL
+                ?: if (providerType == ProviderType.glm) "https://open.bigmodel.cn/api/paas/v4" else ""
+        )
+    }
 
     SettingsScaffold(
         title = stringResource(R.string.add_provider_configure_provider, providerType.displayName),
@@ -538,7 +550,7 @@ private fun ColumnScope.ApiKeyConfigSection(
     val scope = rememberCoroutineScope()
     var showApiKeyPlaintext by remember { mutableStateOf(false) }
     var appendV1Suffix by remember {
-        mutableStateOf(initialAppendV1 ?: (providerType != ProviderType.gemini))
+        mutableStateOf(initialAppendV1 ?: (providerType != ProviderType.gemini && providerType != ProviderType.glm))
     }
     // OpenAI API Format: false = Chat Completions, true = Responses API
     var useResponsesAPI by remember { mutableStateOf(false) }
@@ -548,6 +560,7 @@ private fun ColumnScope.ApiKeyConfigSection(
         ProviderType.anthropic -> "sk-ant-..."
         ProviderType.openAI -> "sk-..."
         ProviderType.gemini -> "Gemini API Key..."
+        ProviderType.glm -> "智谱 API Key (open.bigmodel.cn)..."
         ProviderType.openRouter -> "sk-or-..."
         ProviderType.xAI -> "xai-..."
         ProviderType.kimiCode -> "sk-..."
@@ -585,6 +598,7 @@ private fun ColumnScope.ApiKeyConfigSection(
     if (providerType != ProviderType.openRouter) {
         val defaultUrl = when (providerType) {
             ProviderType.gemini -> "https://generativelanguage.googleapis.com/v1beta"
+            ProviderType.glm -> "https://open.bigmodel.cn/api/paas/v4"
             ProviderType.anthropic -> "https://api.anthropic.com"
             ProviderType.openAI -> "https://api.openai.com"
             else -> "https://api.example.com"
@@ -598,8 +612,8 @@ private fun ColumnScope.ApiKeyConfigSection(
         // on the Anthropic endpoint footer so this can be discovered
         // without scraping issue threads. Default Anthropic + other
         // provider types keep their original footer copy.
-        val baseUrlFooter = if (providerType == ProviderType.gemini) {
-            "Leave empty to use the default Google endpoint. Enter the full base URL including version path."
+        val baseUrlFooter = if (providerType == ProviderType.gemini || providerType == ProviderType.glm) {
+            "Leave empty or use the default endpoint. Enter the full base URL including version path."
         } else if (providerType == ProviderType.anthropic) {
             stringResource(R.string.add_provider_endpoint_anthropic_hint)
         } else if (appendV1Suffix) {
@@ -620,8 +634,8 @@ private fun ColumnScope.ApiKeyConfigSection(
                     singleLine = true,
                 )
             }
-            // Auto Append "/v1" toggle (not for Gemini — Gemini uses full path)
-            if (providerType != ProviderType.gemini) {
+            // Auto Append "/v1" toggle (not for Gemini or GLM — full path used)
+            if (providerType != ProviderType.gemini && providerType != ProviderType.glm) {
                 SettingsSwitchRow(
                     title = stringResource(R.string.add_provider_auto_append_v1_quoted),
                     checked = appendV1Suffix,
@@ -731,6 +745,7 @@ private fun ColumnScope.OAuthConfigSection(
         ProviderType.openRouter -> "Sign in with OpenRouter"
         ProviderType.xAI -> "Sign in with xAI"
         ProviderType.kimiCode -> "Sign in with Kimi Code"
+        ProviderType.glm -> "Sign in with Zhipu"
         ProviderType.githubCopilot -> "Sign in with GitHub"
         ProviderType.openAIResponses -> "Sign in with OpenAI"
         ProviderType.antigravity,
@@ -1029,6 +1044,7 @@ private fun ColumnScope.OAuthConfigSection(
         if (providerType != ProviderType.githubCopilot) {
         val defaultUrl = when (providerType) {
             ProviderType.gemini -> "https://generativelanguage.googleapis.com/v1beta"
+            ProviderType.glm -> "https://open.bigmodel.cn/api/paas/v4"
             ProviderType.anthropic -> "https://api.anthropic.com"
             ProviderType.openAI -> "https://api.openai.com"
             ProviderType.openRouter -> "https://openrouter.ai/api/v1"

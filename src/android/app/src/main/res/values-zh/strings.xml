@@ -1155,6 +1155,7 @@
     <string name="add_provider_subtitle_openai">支持 Codex、DeepSeek、Moonshot、Groq 等兼容厂商</string>
     <string name="add_provider_subtitle_anthropic">支持 Claude 及兼容 Anthropic 协议的服务商</string>
     <string name="add_provider_subtitle_gemini">支持 Gemini 系列及 Google AI Studio</string>
+    <string name="add_provider_subtitle_glm">支持 AutoGLM-Phone 及 GLM 旗舰大模型，智谱开放平台 API</string>
     <string name="add_provider_subtitle_openrouter">聚合 GPT、Claude、Gemini、Llama 等主流模型</string>
     <string name="add_provider_subtitle_xai">支持 Grok 系列模型</string>
     <string name="add_provider_configure_provider">配置 %1$s</string>

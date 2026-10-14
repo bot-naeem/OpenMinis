@@ -214,6 +214,15 @@ object ProviderFactory {
                     )
                 }
             }
+            ProviderType.glm -> {
+                val base = basePath ?: "https://open.bigmodel.cn/api/paas/v4"
+                OpenAIProvider(
+                    apiKey = apiKey,
+                    model = model,
+                    basePath = base,
+                    customUserAgent = instance.customUserAgent,
+                )
+            }
             ProviderType.githubCopilot -> {
                 // [T-copilot-provider] Chat is plain OpenAI Chat Completions at
                 // api.githubcopilot.com, so the existing provider carries it —

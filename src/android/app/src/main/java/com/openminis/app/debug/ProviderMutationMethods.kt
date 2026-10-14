@@ -212,6 +212,7 @@ internal object ProviderMutationMethods {
             ProviderType.openRouter -> "https://openrouter.ai/api/v1"
             ProviderType.xAI -> "https://api.x.ai/v1"
             ProviderType.kimiCode -> "https://api.kimi.com/coding/v1"
+            ProviderType.glm -> "https://open.bigmodel.cn/api/paas/v4"
             ProviderType.githubCopilot -> com.openminis.app.auth.CopilotDeviceFlow.API_BASE
             ProviderType.antigravity, ProviderType.unsupported -> ""
         }
@@ -225,6 +226,7 @@ internal object ProviderMutationMethods {
             ProviderType.xAI -> if (baseURL.endsWith("/v1")) "$baseURL/models" else "$baseURL/v1/models"
             // Kimi Coding: OpenAI-compatible /models under /coding/v1.
             ProviderType.kimiCode -> if (baseURL.endsWith("/v1")) "$baseURL/models" else "$baseURL/v1/models"
+            ProviderType.glm -> "$baseURL/models"
             // [T-copilot-provider] /models sits at the API root, no /v1.
             ProviderType.githubCopilot -> "$baseURL/models"
             // No probe endpoint for a type this build cannot drive.
@@ -248,6 +250,7 @@ internal object ProviderMutationMethods {
             ProviderType.xAI -> if (!key.isNullOrEmpty()) builder.header("Authorization", "Bearer $key")
             // Kimi Coding: OpenAI-compat bearer (OAuth access token or key).
             ProviderType.kimiCode -> if (!key.isNullOrEmpty()) builder.header("Authorization", "Bearer $key")
+            ProviderType.glm -> if (!key.isNullOrEmpty()) builder.header("Authorization", "Bearer $key")
             // [T-copilot-provider] The mirrored `apikey_<id>` slot holds the
             // GITHUB account token, which /models does not accept — it wants
             // the short-lived session token. A meaningful probe would have to

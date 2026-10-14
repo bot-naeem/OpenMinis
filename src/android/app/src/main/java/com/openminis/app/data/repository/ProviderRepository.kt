@@ -2709,6 +2709,12 @@ class ProviderRepository(private val context: Context) {
                         // [T-provider-default-modality-key] Kimi's own models,
                         // not a relay's: same relabel as xAI above.
                         .map { it.copy(provider = "Kimi") }
+                    ProviderType.glm -> OpenAIModelsApi.fetchModels(
+                        apiKey,
+                        baseURL ?: "https://open.bigmodel.cn/api/paas/v4",
+                        customUserAgent = instance.customUserAgent,
+                    ).map { it.copy(provider = "GLM") }
+                        .ifEmpty { LLMModel.allGlm }
                     // [T-copilot-provider] Copilot's own /models, not the
                     // OpenAI-compatible helper: the call needs the short-lived
                     // session token plus the editor-identity headers, and the
@@ -3032,6 +3038,7 @@ class ProviderRepository(private val context: Context) {
             ProviderType.openRouter -> "https://openrouter.ai/api/v1"
             ProviderType.xAI -> "https://api.x.ai/v1"
             ProviderType.kimiCode -> "${com.openminis.app.auth.KimiDeviceFlow.CODING_API_BASE}/v1"
+            ProviderType.glm -> "https://open.bigmodel.cn/api/paas/v4"
             // [T-copilot-provider] No /v1 suffix — Copilot serves
             // /chat/completions and /models straight off the API root.
             ProviderType.githubCopilot -> com.openminis.app.auth.CopilotDeviceFlow.API_BASE

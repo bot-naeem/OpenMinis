@@ -108,6 +108,8 @@ object VoiceProviderFactory {
 
             // [T-kimi-oauth] Kimi Coding Plan serves no voice models.
             ProviderType.kimiCode -> null
+            ProviderType.glm ->
+                ZhipuVoiceProvider(instance.id, custom ?: ZhipuVoiceProvider.DEFAULT_ORIGIN, apiKey)
             // [T-copilot-provider] Copilot is chat-only — no TTS/STT endpoints.
             ProviderType.githubCopilot -> null
             // [T-android-provider-type-parity] No voice support for types this

@@ -2,6 +2,7 @@ package com.openminis.app.tools
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -96,15 +97,16 @@ object ScreenTool {
 
     fun touchDefinition(): AgentToolDefinition = AgentToolDefinition(
         name = ToolNames.SCREEN_TOUCH,
-        description = "Perform physical touch, swipe, keyboard typing, system navigation, or user takeover on the Android device (aligned with Doubao Phone Assistant / UI-TARS action space). " +
-            "Targets can be specified by `element` (ID from screen_view SoM, e.g. element=3) OR by normalized coordinates `x, y` (0~1000 scale) / `point=[x, y]`. " +
-            "Supported actions: click/tap, double_click, long_press, swipe, scroll, type, press_key, wait, takeover. " +
+        description = "Perform physical touch, swipe, keyboard typing, application launching, system navigation, or user takeover on the Android device (aligned with AutoGLM-Phone and Doubao Phone Assistant / UI-TARS action space). " +
+            "Targets can be specified by `app` (name or package to launch), `element` (ID from screen_view SoM, e.g. element=3) OR by normalized coordinates `x, y` (0~1000 scale) / `point=[x, y]`. " +
+            "Supported actions: launch, click/tap, double_click, long_press, swipe, scroll, type, press_key, wait, takeover. " +
             "Set `capture_after: true` on any action to immediately capture and return the updated screen in the same turn for instant visual verification. " +
             "Action `takeover`: pauses execution and requests the user to manually handle sensitive operations (CAPTCHA / payment / biometric auth).",
         parameters = mapOf(
             "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
             "action" to AgentToolParam("string", "What action to perform on the screen",
-                enumValues = listOf("click", "tap", "double_click", "double_tap", "long_press", "swipe", "scroll", "type", "press_key", "key", "wait", "takeover")),
+                enumValues = listOf("launch", "click", "tap", "double_click", "double_tap", "long_press", "swipe", "scroll", "type", "press_key", "key", "wait", "takeover")),
+            "app" to AgentToolParam("string", "Application display name (e.g. '美团', '小红书', '微信') or Android package name (e.g. 'com.xingin.xhs') to launch for launch action."),
             "element" to AgentToolParam("integer", "Target element ID from screen_view SoM (e.g. 1, 2, 3). If provided, automatically taps the exact center of that element."),
             "x" to AgentToolParam("integer", "X coordinate (0~1000 normalized, where 0 is left edge and 1000 is right edge) for click, double_click, long_press, or swipe start."),
             "y" to AgentToolParam("integer", "Y coordinate (0~1000 normalized, where 0 is top edge and 1000 is bottom edge) for click, double_click, long_press, or swipe start."),
@@ -121,7 +123,7 @@ object ScreenTool {
             "backend" to AgentToolParam("string", "Explicit backend to use ('auto', 'root', 'shizuku', 'a11y'). Default is 'auto'.", enumValues = listOf("auto", "root", "shizuku", "a11y")),
         ),
         required = listOf("tool_title", "action"),
-        propertyOrdering = listOf("tool_title", "action", "element", "x", "y", "point", "to_x", "to_y", "direction", "text", "key", "duration_ms", "settle_ms", "capture_after", "message", "backend"),
+        propertyOrdering = listOf("tool_title", "action", "app", "element", "x", "y", "point", "to_x", "to_y", "direction", "text", "key", "duration_ms", "settle_ms", "capture_after", "message", "backend"),
     )
 
     fun definition(): AgentToolDefinition = touchDefinition()
@@ -203,6 +205,40 @@ object ScreenTool {
         val (screenW, screenH) = getDisplayBounds(context)
 
         return when (action) {
+            "launch", "open_app" -> {
+                val appTarget = o.optString("app", "").ifEmpty {
+                    o.optString("package", "")
+                }.ifEmpty {
+                    o.optString("text", "")
+                }.trim()
+
+                if (appTarget.isEmpty()) {
+                    return ToolExecutionResult("Error: 'app' (application name or package) is required for launch action", false, toolTitle = toolTitle)
+                }
+
+                val actRes = performLaunch(appTarget, context, backendPref)
+                if (!actRes.success) {
+                    return ToolExecutionResult(actRes.toErrorJson().toString(2), false, toolTitle = toolTitle)
+                }
+
+                val waitSettle = settleMs.coerceAtLeast(1000L)
+                if (waitSettle > 0) sleepQuietly(waitSettle)
+
+                val details = JSONObject().apply {
+                    put("app", appTarget)
+                    put("resolved_package", actRes.message)
+                    put("backend", actRes.backend)
+                    put("settle_ms", waitSettle)
+                }
+
+                if (captureAfter) {
+                    executeCapture(context, sessionId, DEFAULT_MAX_EDGE, DEFAULT_JPEG_QUALITY, backendPref, toolTitle, extraData = details)
+                } else {
+                    val out = JSONObject().put("ok", true).put("action", "launch").put("data", details)
+                    ToolExecutionResult(out.toString(2), true, toolTitle = toolTitle)
+                }
+            }
+
             "click", "tap" -> {
                 val (realX, realY, rawX, rawY) = resolveCoordsFromInput(o, screenW, screenH)
                     ?: return ToolExecutionResult("Error: target required (specify 'element', 'point', or 'x' and 'y')", false, toolTitle = toolTitle)
@@ -412,7 +448,7 @@ object ScreenTool {
 
             else -> {
                 ToolExecutionResult(
-                    output = "Error: unknown action '$action'. Known actions: click, double_click, long_press, swipe, scroll, type, press_key, wait, takeover",
+                    output = "Error: unknown action '$action'. Known actions: launch, click, double_click, long_press, swipe, scroll, type, press_key, wait, takeover",
                     success = false,
                     toolTitle = toolTitle,
                 )
@@ -1080,6 +1116,121 @@ object ScreenTool {
             }
         }
         return sb.toString()
+    }
+
+    fun performLaunch(appTarget: String, context: Context, backendPref: String): ScreenActionResult {
+        val pm = context.packageManager
+        val pkg = resolvePackageName(appTarget, context)
+            ?: return ScreenActionResult(false, "none", "Could not resolve application package for '$appTarget'")
+
+        val backends = resolveActionBackends(backendPref)
+        for (b in backends) {
+            when (b) {
+                "root" -> if (RootAccess.isRootGranted()) {
+                    val res = RootAccess.runSu("monkey -p $pkg -c android.intent.category.LAUNCHER 1", 5000L)
+                    if (res?.exitCode == 0) return ScreenActionResult(true, "root", pkg)
+                }
+                "shizuku" -> if (ShizukuManager.isReady()) {
+                    val res = ShizukuManager.runProcess(arrayOf("monkey", "-p", pkg, "-c", "android.intent.category.LAUNCHER", "1"))
+                    if (res.exitCode == 0) return ScreenActionResult(true, "shizuku", pkg)
+                }
+                "a11y" -> {
+                    try {
+                        val intent = pm.getLaunchIntentForPackage(pkg)
+                        if (intent != null) {
+                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                            context.startActivity(intent)
+                            return ScreenActionResult(true, "a11y", pkg)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "failed to launch intent for $pkg via a11y context", e)
+                    }
+                }
+            }
+        }
+
+        // Framework fallback: attempt context startActivity directly
+        try {
+            val intent = pm.getLaunchIntentForPackage(pkg)
+            if (intent != null) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                context.startActivity(intent)
+                return ScreenActionResult(true, "framework", pkg)
+            }
+        } catch (e: Exception) {
+            return ScreenActionResult(false, "none", "Failed to launch package '$pkg': ${e.message}")
+        }
+
+        return ScreenActionResult(false, "none", "No launch intent found for package '$pkg'")
+    }
+
+    fun resolvePackageName(target: String, context: Context? = null): String? {
+        val trimmed = target.trim()
+        if (trimmed.isEmpty()) return null
+        if (trimmed.contains(".")) return trimmed
+
+        val knownAliases = mapOf(
+            "微信" to "com.tencent.mm",
+            "wechat" to "com.tencent.mm",
+            "qq" to "com.tencent.mobileqq",
+            "小红书" to "com.xingin.xhs",
+            "xhs" to "com.xingin.xhs",
+            "美团" to "com.sankuai.meituan",
+            "大众点评" to "com.dianping.v1",
+            "淘宝" to "com.taobao.taobao",
+            "京东" to "com.jingdong.app.mall",
+            "拼多多" to "com.xunmeng.pinduoduo",
+            "pdd" to "com.xunmeng.pinduoduo",
+            "高德地图" to "com.autonavi.minimap",
+            "高德" to "com.autonavi.minimap",
+            "百度地图" to "com.baidu.BaiduMap",
+            "抖音" to "com.ss.android.ugc.aweme",
+            "快手" to "com.kuaishou.nebula",
+            "哔哩哔哩" to "tv.danmaku.bili",
+            "bilibili" to "tv.danmaku.bili",
+            "b站" to "tv.danmaku.bili",
+            "知乎" to "com.zhihu.android",
+            "微博" to "com.sina.weibo",
+            "网易云音乐" to "com.netease.cloudmusic",
+            "网易云" to "com.netease.cloudmusic",
+            "qq音乐" to "com.tencent.qqmusic",
+            "饿了么" to "me.ele",
+            "携程" to "ctrip.android.view",
+            "12306" to "com.MobileTicket",
+            "铁路12306" to "com.MobileTicket",
+            "滴滴" to "com.sdu.didi.psnger",
+            "滴滴出行" to "com.sdu.didi.psnger",
+            "设置" to "com.android.settings",
+            "相册" to "com.android.gallery3d",
+            "相机" to "com.android.camera",
+            "电话" to "com.android.dialer",
+            "短信" to "com.android.mms",
+            "浏览器" to "com.android.browser",
+        )
+        knownAliases[trimmed.lowercase()]?.let { return it }
+
+        if (context == null) return null
+        try {
+            val pm = context.packageManager
+            val launchIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            val activities = pm.queryIntentActivities(launchIntent, 0)
+            for (resolveInfo in activities) {
+                val label = resolveInfo.loadLabel(pm).toString().trim()
+                if (label.equals(trimmed, ignoreCase = true)) {
+                    return resolveInfo.activityInfo.packageName
+                }
+            }
+            for (resolveInfo in activities) {
+                val label = resolveInfo.loadLabel(pm).toString().trim()
+                if (label.contains(trimmed, ignoreCase = true) || trimmed.contains(label, ignoreCase = true)) {
+                    return resolveInfo.activityInfo.packageName
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "error resolving package name for '$trimmed'", e)
+        }
+
+        return null
     }
 
     private fun sleepQuietly(ms: Long) {

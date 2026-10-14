@@ -24,6 +24,7 @@ class LLMModelDisplayNameTest {
     @Test fun `brand names are rewritten to their canonical casing`() {
         assertEquals("DeepSeek V4 Pro", LLMModel.modelDisplayName("deepseek-v4-pro"))
         assertEquals("DeepSeek Flash", LLMModel.modelDisplayName("deepseek-flash"))
+        assertEquals("AutoGLM Phone", LLMModel.modelDisplayName("autoglm-phone"))
     }
 
     @Test fun `known uppercase acronyms are preserved`() {

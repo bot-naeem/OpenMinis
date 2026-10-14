@@ -39,6 +39,7 @@ class ScreenToolTest {
         val actionParam = def.parameters["action"]
         assertNotNull(actionParam)
         val expectedActions = listOf(
+            "launch",
             "click", "tap",
             "double_click", "double_tap",
             "long_press",
@@ -51,6 +52,7 @@ class ScreenToolTest {
         assertTrue(actionParam!!.enumValues!!.containsAll(expectedActions))
 
         // Targets and options
+        assertTrue(def.parameters.containsKey("app"))
         assertTrue(def.parameters.containsKey("element"))
         assertTrue(def.parameters.containsKey("point"))
         assertTrue(def.parameters.containsKey("x"))
@@ -180,5 +182,29 @@ class ScreenToolTest {
         assertEquals("foo\\\"bar", ScreenTool.escapeForInputText("foo\"bar"))
         assertEquals("foo\\\$bar", ScreenTool.escapeForInputText("foo\$bar"))
         assertEquals("foo\\&bar", ScreenTool.escapeForInputText("foo&bar"))
+    }
+
+    @Test
+    fun `resolvePackageName resolves direct package names and known Chinese app shortcuts`() {
+        // Direct package name
+        assertEquals("com.tencent.mm", ScreenTool.resolvePackageName("com.tencent.mm"))
+        assertEquals("com.xingin.xhs", ScreenTool.resolvePackageName("com.xingin.xhs"))
+
+        // Known aliases
+        assertEquals("com.tencent.mm", ScreenTool.resolvePackageName("微信"))
+        assertEquals("com.tencent.mm", ScreenTool.resolvePackageName("WeChat"))
+        assertEquals("com.xingin.xhs", ScreenTool.resolvePackageName("小红书"))
+        assertEquals("com.xingin.xhs", ScreenTool.resolvePackageName("xhs"))
+        assertEquals("com.sankuai.meituan", ScreenTool.resolvePackageName("美团"))
+        assertEquals("com.taobao.taobao", ScreenTool.resolvePackageName("淘宝"))
+        assertEquals("com.autonavi.minimap", ScreenTool.resolvePackageName("高德地图"))
+        assertEquals("com.autonavi.minimap", ScreenTool.resolvePackageName("高德"))
+        assertEquals("tv.danmaku.bili", ScreenTool.resolvePackageName("哔哩哔哩"))
+        assertEquals("tv.danmaku.bili", ScreenTool.resolvePackageName("b站"))
+        assertEquals("com.MobileTicket", ScreenTool.resolvePackageName("12306"))
+
+        // Blank returns null
+        assertNull(ScreenTool.resolvePackageName(""))
+        assertNull(ScreenTool.resolvePackageName("   "))
     }
 }
