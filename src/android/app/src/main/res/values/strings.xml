@@ -2101,6 +2101,8 @@
     <string name="settings_agent_tools_subtitle">Which optional tools the agent may use</string>
     <string name="agent_tools_browser">Browser Use</string>
     <string name="agent_tools_browser_footer">Browse the web in the in-app browser: open pages, read them, click and type. Stable and on by default. When off, the tool is removed from every conversation — the model does not see it at all.</string>
+    <string name="agent_tools_screen">Screen Automation</string>
+    <string name="agent_tools_screen_footer">Control and observe the physical device screen: capture screenshots for multimodal vision, tap, swipe, type, and press system keys. On by default. When off, the tool is removed from every conversation.</string>
     <string name="agent_tools_agents">Agents</string>
     <string name="agent_tools_agents_footer">Hand self-contained sub-tasks to sub agents that work in their own hidden sessions and report back. The same tool also lets the assistant check on or stop what it started. Configure the roster under Settings › Agents › Sub Agents.</string>
     <string name="settings_agents">Sub Agents</string>

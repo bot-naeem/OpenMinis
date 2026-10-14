@@ -20,6 +20,7 @@ object ToolNames {
     const val WRITE = "write"
     const val EDIT = "edit"
     const val BROWSER = "browser_use"
+    const val SCREEN = "screen"
     const val ANDROID = "android"
     const val MEMORY = "memory"
     const val SUBAGENT = "subagent"
@@ -34,6 +35,12 @@ object ToolNames {
         // and pixels from the path's extension, so an old call resolves to the
         // same tool and is re-routed correctly on replay.
         "read_image" to READ,
+        "screen_capture" to SCREEN,
+        "screen_touch" to SCREEN,
+        "screen_tap" to SCREEN,
+        "screen_action" to SCREEN,
+        "screen_use" to SCREEN,
+        "phone_screen" to SCREEN,
         "memory_write" to MEMORY,
         "memory_get" to MEMORY,
         // [T-sub-agents-v1] delegate_task + agent_status were folded into
@@ -54,7 +61,7 @@ object ToolNames {
      * resolves.
      */
     private val CANONICAL_BY_SQUASHED: Map<String, String> =
-        (listOf(BASH, READ, WRITE, EDIT, BROWSER, ANDROID, MEMORY, SUBAGENT) + ALIASES.keys)
+        (listOf(BASH, READ, WRITE, EDIT, BROWSER, SCREEN, ANDROID, MEMORY, SUBAGENT) + ALIASES.keys)
             .associateBy { squash(it) }
             .mapKeys { (k, _) -> k }
             .mapValues { (_, canonical) -> ALIASES[canonical] ?: canonical }

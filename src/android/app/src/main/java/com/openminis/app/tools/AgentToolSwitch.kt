@@ -26,6 +26,9 @@ enum class AgentToolSwitch(val key: String, val defaultValue: Boolean) {
      *  (see [migrateLegacyIfNeeded]); flipping the default would silently
      *  disable a feature existing users have. */
     AGENTS("agent.tools.agents.enabled", true),
+
+    /** screen — physical device screen automation, on by default. */
+    SCREEN("agent.tools.screen.enabled", true),
     ;
 
     fun isEnabled(context: Context): Boolean =
@@ -48,6 +51,7 @@ enum class AgentToolSwitch(val key: String, val defaultValue: Boolean) {
             // subagent_task/delegate_task/agent_status into `subagent`, so a
             // replayed call from an older transcript is still governed.
             ToolNames.SUBAGENT -> AGENTS
+            ToolNames.SCREEN -> SCREEN
             else -> null
         }
 

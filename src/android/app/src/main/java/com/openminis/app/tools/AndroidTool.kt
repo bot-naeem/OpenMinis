@@ -53,6 +53,8 @@ object AndroidTool {
         "open" to "android-open",
         "shizuku" to "android-shizuku-cli",
         "root" to "android-root-cli",
+        "screen" to "android-screen",
+        "screen_capture" to "android-screen",
     )
 
     /**
@@ -66,16 +68,16 @@ object AndroidTool {
     fun definition(): AgentToolDefinition = AgentToolDefinition(
         name = ToolNames.ANDROID,
         description = "Control the Android device from outside the sandbox. The sandbox has no " +
-            "host access, so packages, settings, notifications, alarms, input, media and any " +
+            "host access, so packages, settings, notifications, alarms, input, media, screen, and any " +
             "privileged shell all go through here. " +
             "Actions: device, package, settings, activity, notification, alarm, calendar, " +
             "clipboard, contacts, photos, location, speak, speech, weather, player, open, " +
-            "shizuku, root. Run `android --help <action>` for the arguments of one action. " +
+            "shizuku, root, screen. Run `android --help <action>` for the arguments of one action. " +
             "Privileged actions (shizuku, root) return permission_denied until enabled in " +
             "[Settings -> Permissions]; relay that instead of retrying.",
         parameters = mapOf(
             "tool_title" to AgentToolParam("string", "A concise 5-10 word summary of what this tool call does, shown to the user. Use the same language as the user."),
-            "action" to AgentToolParam("string", "What to do: device | package | settings | activity | notification | alarm | calendar | clipboard | contacts | photos | location | speak | speech | weather | player | open | shizuku | root.", enumValues = ACTION_HANDLERS.keys.toList()),
+            "action" to AgentToolParam("string", "What to do: device | package | settings | activity | notification | alarm | calendar | clipboard | contacts | photos | location | speak | speech | weather | player | open | shizuku | root | screen.", enumValues = ACTION_HANDLERS.keys.toList()),
             "args" to AgentToolParam("string", "Arguments for the action, as a single string (e.g. \"info battery storage\" or \"list --max 20\"). Run `android --help <action>` for the full set."),
         ),
         required = listOf("tool_title", "action"),
@@ -85,8 +87,9 @@ object AndroidTool {
     fun execute(argsJson: String, sessionId: String, context: Context): ToolExecutionResult {
         val action: String
         val rest: List<String>
+        val o: JSONObject
         try {
-            val o = JSONObject(argsJson)
+            o = JSONObject(argsJson)
             action = o.optString("action", "").trim().lowercase()
             rest = splitArgs(o.optString("args", ""))
         } catch (_: Exception) {
@@ -98,6 +101,11 @@ object AndroidTool {
                 "Error: 'action' is required. Known actions: ${ACTION_HANDLERS.keys.joinToString(", ")}",
                 false,
             )
+        }
+
+        if (action in setOf("screen", "screen_capture", "screen_touch", "screen_tap")) {
+            val rawArgs = o.optString("args", "")
+            return ScreenTool.executeViaAndroidTool(action, rawArgs, sessionId, context)
         }
 
         if (action == "--help" || action == "help") {

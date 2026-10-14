@@ -39,6 +39,8 @@ object AgentTools {
         // browser_use globally. Separate from delegateEnabled because the two
         // are independent user choices; mirrors iOS AgentToolSwitch.browser.
         browserEnabled: Boolean = true,
+        // Screen automation tool — capture and touch on physical phone display.
+        screenEnabled: Boolean = true,
         // [T-sub-agents-v1] The names of the enabled sub agents, in roster
         // order. These become `subagent_task.agent`'s enum, and the caller
         // rebuilds them every turn: the schema is not cached, so a rename takes
@@ -57,6 +59,7 @@ object AgentTools {
         add(FileWriteTool.definition())
         add(FileEditTool.definition())
         if (browserEnabled) add(browserUseDefinition())
+        if (screenEnabled) add(ScreenTool.definition())
         add(AndroidTool.definition())
         if (memoryEnabled) add(memoryDefinition())
         if (!isHelper && delegateEnabled) {

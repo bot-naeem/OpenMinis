@@ -1908,6 +1908,8 @@
     <string name="settings_agent_tools_subtitle">允许助手使用哪些可选工具</string>
     <string name="agent_tools_browser">浏览器</string>
     <string name="agent_tools_browser_footer">在应用内浏览器中访问网页：打开页面、阅读内容、点击和输入。功能已稳定，默认开启。关闭后该工具会从所有对话中移除，模型完全看不到它。</string>
+    <string name="agent_tools_screen">屏幕自动化</string>
+    <string name="agent_tools_screen_footer">感知与操控手机物理屏幕：截图用于多模态视觉理解，模拟点击、滑动、输入文本以及系统按键。默认开启。关闭后该工具会从所有对话中移除。</string>
     <string name="agent_tools_agents">代理任务</string>
     <string name="agent_tools_agents_footer">把独立的子任务交给子代理，在其各自的隐藏会话中完成并回报结果。同一个工具也让助手查看或停止已经派出的子代理。名册在“设置 › 代理任务 › 子代理”中配置。</string>
     <string name="settings_agents">子代理任务</string>

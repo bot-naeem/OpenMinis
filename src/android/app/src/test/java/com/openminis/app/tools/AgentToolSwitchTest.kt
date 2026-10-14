@@ -21,6 +21,8 @@ class AgentToolSwitchTest {
     @Test
     fun `each optional tool is governed by the expected switch`() {
         assertEquals(AgentToolSwitch.BROWSER, AgentToolSwitch.governing("browser_use"))
+        assertEquals(AgentToolSwitch.SCREEN, AgentToolSwitch.governing("screen"))
+        assertEquals(AgentToolSwitch.SCREEN, AgentToolSwitch.governing("screen_capture"))
         assertEquals(AgentToolSwitch.AGENTS, AgentToolSwitch.governing("delegate_task"))
         // agent_status must ride with delegate_task: inspecting agents you can
         // no longer create is a dead tool in the schema.
@@ -43,33 +45,42 @@ class AgentToolSwitchTest {
         // user's choice across platforms; a typo here would silently split them.
         assertEquals("agent.tools.browser.enabled", AgentToolSwitch.BROWSER.key)
         assertEquals("agent.tools.agents.enabled", AgentToolSwitch.AGENTS.key)
+        assertEquals("agent.tools.screen.enabled", AgentToolSwitch.SCREEN.key)
         assertTrue("browser_use is mature and ships on", AgentToolSwitch.BROWSER.defaultValue)
+        assertTrue("screen is on by default", AgentToolSwitch.SCREEN.defaultValue)
     }
 
     @Test
     fun `disabling a switch removes its tools from the schema`() {
-        fun names(browser: Boolean, delegate: Boolean) =
-            AgentTools.makeAgentTools(browserEnabled = browser, delegateEnabled = delegate)
+        fun names(browser: Boolean, delegate: Boolean, screen: Boolean = true) =
+            AgentTools.makeAgentTools(browserEnabled = browser, delegateEnabled = delegate, screenEnabled = screen)
                 .map { it.name }.toSet()
 
         // [T-sub-agents-v1] delegate_task + agent_status became a single
         // sub-agent tool, since renamed to `subagent`; the switch governs the
         // whole capability.
-        val all = names(browser = true, delegate = true)
-        assertTrue(all.containsAll(listOf("browser_use", "subagent")))
+        val all = names(browser = true, delegate = true, screen = true)
+        assertTrue(all.containsAll(listOf("browser_use", "subagent", "screen")))
 
-        val noBrowser = names(browser = false, delegate = true)
+        val noBrowser = names(browser = false, delegate = true, screen = true)
         assertFalse("browser_use must be absent, not merely refused", "browser_use" in noBrowser)
         assertTrue("the agents tool is independent", "subagent" in noBrowser)
+        assertTrue("screen is independent", "screen" in noBrowser)
 
-        val noAgents = names(browser = true, delegate = false)
+        val noAgents = names(browser = true, delegate = false, screen = true)
         assertFalse("subagent" in noAgents)
         assertTrue("browser_use is independent", "browser_use" in noAgents)
+        assertTrue("screen is independent", "screen" in noAgents)
 
-        // Both off: only the core tools remain, and shell/file access survives.
-        val neither = names(browser = false, delegate = false)
+        val noScreen = names(browser = true, delegate = true, screen = false)
+        assertFalse("screen must be absent when disabled", "screen" in noScreen)
+        assertTrue("browser_use is independent", "browser_use" in noScreen)
+        assertTrue("subagent is independent", "subagent" in noScreen)
+
+        // All off: only the core tools remain, and shell/file access survives.
+        val neither = names(browser = false, delegate = false, screen = false)
         assertTrue("bash" in neither && "read" in neither)
-        for (gated in listOf("browser_use", "subagent")) {
+        for (gated in listOf("browser_use", "subagent", "screen")) {
             assertFalse(gated in neither)
         }
     }

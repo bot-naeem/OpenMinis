@@ -721,6 +721,10 @@ class MinisApp : Application(), ImageLoaderFactory {
             "android-root-cli",
             com.openminis.app.sandbox.offload.RootOffloadHandler(this),
         )
+        NativeOffloadServer.register(
+            "android-screen",
+            com.openminis.app.sandbox.offload.ScreenOffloadHandler(this),
+        )
         com.openminis.app.offload.ShizukuManager.init(this)
 
         // T-android-minis-debug-cli: shell-side CLI wrapper around the in-app

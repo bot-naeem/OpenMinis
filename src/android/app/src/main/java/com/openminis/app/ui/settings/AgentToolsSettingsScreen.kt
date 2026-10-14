@@ -29,8 +29,22 @@ fun AgentToolsSettingsScreen(onBack: () -> Unit) {
     var browserEnabled by remember {
         mutableStateOf(AgentToolSwitch.BROWSER.isEnabled(context))
     }
+    var screenEnabled by remember {
+        mutableStateOf(AgentToolSwitch.SCREEN.isEnabled(context))
+    }
 
     SettingsScaffold(title = stringResource(R.string.settings_agent_tools), onBack = onBack) {
+        SettingsSection(footer = stringResource(R.string.agent_tools_screen_footer)) {
+            SettingsSwitchRow(
+                title = stringResource(R.string.agent_tools_screen),
+                checked = screenEnabled,
+                onCheckedChange = {
+                    screenEnabled = it
+                    AgentToolSwitch.SCREEN.setEnabled(context, it)
+                },
+                showDivider = false,
+            )
+        }
         SettingsSection(footer = stringResource(R.string.agent_tools_browser_footer)) {
             SettingsSwitchRow(
                 title = stringResource(R.string.agent_tools_browser),

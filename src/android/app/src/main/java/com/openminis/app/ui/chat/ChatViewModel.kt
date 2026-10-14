@@ -1960,6 +1960,7 @@ class ChatViewModel(
             isHelper = isHelper,
             delegateEnabled = com.openminis.app.tools.AgentToolSwitch.AGENTS.isEnabled(context),
             browserEnabled = com.openminis.app.tools.AgentToolSwitch.BROWSER.isEnabled(context),
+            screenEnabled = com.openminis.app.tools.AgentToolSwitch.SCREEN.isEnabled(context),
             // [T-sub-agents-v1] Rebuilt on every schema build (this property is
             // not cached), so renaming a sub agent takes effect on the next
             // request and the enum can never advertise a name the resolver
@@ -13191,6 +13192,12 @@ class ChatViewModel(
                     executeBrowserUseTool(argsJson)
                 } else {
                     toolDisabledResult("browser_use")
+                }
+            ToolNames.SCREEN ->
+                if (com.openminis.app.tools.AgentToolSwitch.SCREEN.isEnabled(context)) {
+                    com.openminis.app.tools.ScreenTool.execute(argsJson, fsSessionId, context)
+                } else {
+                    toolDisabledResult(ToolNames.SCREEN)
                 }
             // [T-android-tool-surface] memory_write + memory_get are one tool.
             // `content` present means write, absent means search — the two old
