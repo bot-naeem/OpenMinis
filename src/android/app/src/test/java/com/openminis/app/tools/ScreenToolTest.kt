@@ -61,12 +61,23 @@ class ScreenToolTest {
         assertTrue(def.parameters.containsKey("to_y"))
         assertTrue(def.parameters.containsKey("direction"))
         assertTrue(def.parameters.containsKey("text"))
+        assertTrue(def.parameters.containsKey("clear"))
         assertTrue(def.parameters.containsKey("key"))
         assertTrue(def.parameters.containsKey("duration_ms"))
         assertTrue(def.parameters.containsKey("settle_ms"))
         assertTrue(def.parameters.containsKey("capture_after"))
         assertTrue(def.parameters.containsKey("message"))
         assertTrue(def.parameters.containsKey("backend"))
+    }
+
+    @Test
+    fun `isPureAscii correctly identifies ASCII vs Unicode strings`() {
+        assertTrue(ScreenTool.isPureAscii("hello world"))
+        assertTrue(ScreenTool.isPureAscii("sup vai"))
+        assertTrue(ScreenTool.isPureAscii("123!@#$%^&*()_+"))
+        assertFalse(ScreenTool.isPureAscii("蓝牙abc123✨测试"))
+        assertFalse(ScreenTool.isPureAscii("中文"))
+        assertFalse(ScreenTool.isPureAscii("✨"))
     }
 
     @Test

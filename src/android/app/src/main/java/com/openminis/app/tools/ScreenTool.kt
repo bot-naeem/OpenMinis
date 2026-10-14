@@ -1,6 +1,8 @@
 package com.openminis.app.tools
 
 import android.accessibilityservice.AccessibilityService
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -12,6 +14,8 @@ import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityNodeInfo
@@ -26,6 +30,8 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 
 /**
@@ -114,7 +120,8 @@ object ScreenTool {
             "to_x" to AgentToolParam("integer", "Target X coordinate (0~1000 normalized) for swipe."),
             "to_y" to AgentToolParam("integer", "Target Y coordinate (0~1000 normalized) for swipe."),
             "direction" to AgentToolParam("string", "Scroll direction for scroll action", enumValues = listOf("up", "down", "left", "right")),
-            "text" to AgentToolParam("string", "Text to type into focused field for type action."),
+            "text" to AgentToolParam("string", "Text to type into field for type action. Can be used together with point=[x, y] or element to tap and focus before typing."),
+            "clear" to AgentToolParam("boolean", "Optional. If true, clears existing text in the input field before typing."),
             "key" to AgentToolParam("string", "Key name for press_key action: 'back', 'home', 'recents', 'enter', 'delete', 'volume_up', 'volume_down', 'power' (or Android keycode integer)."),
             "duration_ms" to AgentToolParam("integer", "Duration in milliseconds for swipe, long_press, or wait action (default: 300 for swipe, 800 for long_press, 1000 for wait)."),
             "settle_ms" to AgentToolParam("integer", "Delay in milliseconds after touch action to let Android UI finish transition animations before returning (default: 400ms)."),
@@ -123,7 +130,7 @@ object ScreenTool {
             "backend" to AgentToolParam("string", "Explicit backend to use ('auto', 'root', 'shizuku', 'a11y'). Default is 'auto'.", enumValues = listOf("auto", "root", "shizuku", "a11y")),
         ),
         required = listOf("tool_title", "action"),
-        propertyOrdering = listOf("tool_title", "action", "app", "element", "x", "y", "point", "to_x", "to_y", "direction", "text", "key", "duration_ms", "settle_ms", "capture_after", "message", "backend"),
+        propertyOrdering = listOf("tool_title", "action", "app", "element", "x", "y", "point", "to_x", "to_y", "direction", "text", "clear", "key", "duration_ms", "settle_ms", "capture_after", "message", "backend"),
     )
 
     fun definition(): AgentToolDefinition = touchDefinition()
@@ -370,14 +377,16 @@ object ScreenTool {
                     return ToolExecutionResult("Error: 'text' is required for type action", false, toolTitle = toolTitle)
                 }
 
-                // If element was passed, tap it first to ensure focus
+                val clear = o.optBoolean("clear", false)
+
+                // If element or coordinates were passed, tap it first to ensure focus
                 val targetCoords = resolveCoordsFromInput(o, screenW, screenH)
                 if (targetCoords != null) {
                     performTap(targetCoords.realX, targetCoords.realY, context, backendPref)
-                    sleepQuietly(200)
+                    sleepQuietly(400) // 400ms to allow view focus & soft keyboard initialization
                 }
 
-                val actRes = performType(text, context, backendPref)
+                val actRes = performType(text, context, backendPref, targetCoords, clearFirst = clear)
                 if (!actRes.success) {
                     return ToolExecutionResult(actRes.toErrorJson().toString(2), false, toolTitle = toolTitle)
                 }
@@ -388,6 +397,11 @@ object ScreenTool {
                     put("text", text)
                     put("backend", actRes.backend)
                     put("settle_ms", settleMs)
+                    if (targetCoords != null) {
+                        put("tapped_point", JSONArray().put(targetCoords.rawX).put(targetCoords.rawY))
+                    } else {
+                        put("hint", "Typed into currently focused field. If target field was not focused, provide point=[x, y] to focus before typing.")
+                    }
                 }
 
                 if (captureAfter) {
@@ -1004,32 +1018,194 @@ object ScreenTool {
         return Pair(coordsJson, res)
     }
 
-    private fun performType(text: String, context: Context, backendPref: String): ScreenActionResult {
+    fun setSystemClipboard(context: Context, text: String): Boolean {
+        return try {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                ?: return false
+            val latch = CountDownLatch(1)
+            var success = false
+            Handler(Looper.getMainLooper()).post {
+                try {
+                    val clip = ClipData.newPlainText("screen_touch", text)
+                    cm.setPrimaryClip(clip)
+                    success = true
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to setPrimaryClip: ${e.message}", e)
+                } finally {
+                    latch.countDown()
+                }
+            }
+            latch.await(1500, TimeUnit.MILLISECONDS)
+            success
+        } catch (e: Exception) {
+            Log.w(TAG, "setSystemClipboard error", e)
+            false
+        }
+    }
+
+    fun isPureAscii(text: String): Boolean {
+        for (ch in text) {
+            if (ch.code > 127) return false
+        }
+        return true
+    }
+
+    private fun findEditableNode(a11y: MinisAccessibilityService, targetCoords: QuadCoords?): AccessibilityNodeInfo? {
+        val roots = a11y.rootNodes()
+        if (roots.isEmpty()) return null
+
+        // 1. If target coordinates are provided, find node under coordinates
+        if (targetCoords != null) {
+            for (root in roots) {
+                val nodeAtPoint = findNodeAtPoint(root, targetCoords.realX, targetCoords.realY)
+                if (nodeAtPoint != null) {
+                    val editable = findNearestEditable(nodeAtPoint)
+                    if (editable != null) return editable
+                }
+            }
+        }
+
+        // 2. Check input focus
+        for (root in roots) {
+            val focusedInput = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            if (focusedInput != null && focusedInput.isEditable) return focusedInput
+            val focusedA11y = root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
+            if (focusedA11y != null && focusedA11y.isEditable) return focusedA11y
+        }
+
+        // 3. Search tree for isFocused == true && isEditable == true
+        for (root in roots) {
+            val focused = findNodeMatching(root) { it.isFocused && it.isEditable }
+            if (focused != null) return focused
+        }
+
+        // 4. Search tree for any isEditable == true node
+        for (root in roots) {
+            val editable = findNodeMatching(root) { it.isEditable }
+            if (editable != null) return editable
+        }
+
+        return null
+    }
+
+    private fun findNodeAtPoint(root: AccessibilityNodeInfo, x: Int, y: Int): AccessibilityNodeInfo? {
+        val rect = Rect()
+        root.getBoundsInScreen(rect)
+        if (!rect.contains(x, y)) return null
+        for (i in 0 until root.childCount) {
+            val child = root.getChild(i) ?: continue
+            val found = findNodeAtPoint(child, x, y)
+            if (found != null) return found
+        }
+        return root
+    }
+
+    private fun findNearestEditable(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        var curr: AccessibilityNodeInfo? = node
+        while (curr != null) {
+            if (curr.isEditable) return curr
+            curr = curr.parent
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            if (child.isEditable) return child
+        }
+        return null
+    }
+
+    private fun findNodeMatching(root: AccessibilityNodeInfo, predicate: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
+        if (predicate(root)) return root
+        for (i in 0 until root.childCount) {
+            val child = root.getChild(i) ?: continue
+            val found = findNodeMatching(child, predicate)
+            if (found != null) return found
+        }
+        return null
+    }
+
+    private fun performType(
+        text: String,
+        context: Context,
+        backendPref: String,
+        targetCoords: QuadCoords? = null,
+        clearFirst: Boolean = false,
+    ): ScreenActionResult {
         val backends = resolveActionBackends(backendPref)
+
+        // 1. Preload clipboard with exact text (supports UTF-8 Chinese, emojis, symbols, newlines)
+        val clipSet = setSystemClipboard(context, text)
+
         for (b in backends) {
             when (b) {
                 "root" -> if (RootAccess.isRootGranted()) {
-                    val escaped = escapeForInputText(text)
-                    val res = RootAccess.runSu("input text $escaped", 5000L)
-                    if (res?.exitCode == 0) return ScreenActionResult(true, "root")
+                    if (clearFirst) {
+                        RootAccess.runSu("input keyevent 29 31", 3000L) // Ctrl+A
+                        RootAccess.runSu("input keyevent 67", 3000L)    // DEL
+                        sleepQuietly(100)
+                    }
+
+                    // Primary Strategy: KEYCODE_PASTE (279) inserts directly from clipboard, bypassing IME pinyin composition
+                    if (clipSet) {
+                        val pasteRes = RootAccess.runSu("input keyevent 279", 5000L)
+                        if (pasteRes?.exitCode == 0) return ScreenActionResult(true, "root")
+                    }
+
+                    // Secondary Strategy: Ctrl+V (29 + 50)
+                    if (clipSet) {
+                        val ctrlV = RootAccess.runSu("input keyevent --longpress 29 50", 5000L)
+                        if (ctrlV?.exitCode == 0) return ScreenActionResult(true, "root")
+                    }
+
+                    // Fallback Strategy: input text for pure-ASCII strings only if clipboard paste failed
+                    if (isPureAscii(text)) {
+                        val escaped = escapeForInputText(text)
+                        val res = RootAccess.runSu("input text $escaped", 5000L)
+                        if (res?.exitCode == 0) return ScreenActionResult(true, "root")
+                    }
                 }
                 "shizuku" -> if (ShizukuManager.isReady()) {
-                    val escaped = escapeForInputText(text)
-                    val res = ShizukuManager.runProcess(arrayOf("input", "text", escaped))
-                    if (res.exitCode == 0) return ScreenActionResult(true, "shizuku")
+                    if (clearFirst) {
+                        ShizukuManager.runProcess(arrayOf("input", "keyevent", "29", "31"))
+                        ShizukuManager.runProcess(arrayOf("input", "keyevent", "67"))
+                        sleepQuietly(100)
+                    }
+
+                    if (clipSet) {
+                        val pasteRes = ShizukuManager.runProcess(arrayOf("input", "keyevent", "279"))
+                        if (pasteRes.exitCode == 0) return ScreenActionResult(true, "shizuku")
+                    }
+
+                    if (isPureAscii(text)) {
+                        val escaped = escapeForInputText(text)
+                        val res = ShizukuManager.runProcess(arrayOf("input", "text", escaped))
+                        if (res.exitCode == 0) return ScreenActionResult(true, "shizuku")
+                    }
                 }
                 "a11y" -> {
                     val a11y = MinisAccessibilityService.getInstance()
                     if (a11y != null) {
-                        val focused = a11y.rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
-                        if (focused != null && focused.isEditable) {
-                            if (a11y.setNodeText(focused, text)) return ScreenActionResult(true, "a11y")
+                        val node = findEditableNode(a11y, targetCoords)
+                        if (node != null) {
+                            if (clearFirst) {
+                                a11y.setNodeText(node, "")
+                                sleepQuietly(50)
+                            }
+                            if (a11y.setNodeText(node, text)) {
+                                return ScreenActionResult(true, "a11y")
+                            }
+                            if (clipSet && node.performAction(AccessibilityNodeInfo.ACTION_PASTE)) {
+                                return ScreenActionResult(true, "a11y")
+                            }
                         }
                     }
                 }
             }
         }
-        return ScreenActionResult(false, "none", "No input backend available for type action")
+        return ScreenActionResult(
+            false,
+            "none",
+            "Failed to type text '$text'. Neither clipboard paste (root/shizuku keyevent 279) nor accessibility input could be applied."
+        )
     }
 
     private fun performKey(keyStr: String, context: Context, backendPref: String): ScreenActionResult {
