@@ -13,6 +13,7 @@ import android.os.Build
 import android.util.AttributeSet
 import android.view.RoundedCorner
 import android.view.View
+import android.view.WindowInsets
 import android.view.animation.LinearInterpolator
 
 /**
@@ -52,8 +53,20 @@ class AuroraGlowView @JvmOverloads constructor(
     var isShutterHidden: Boolean = false
 
     init {
+        fitsSystemWindows = false
+        @Suppress("DEPRECATION")
+        systemUiVisibility = (
+            SYSTEM_UI_FLAG_LAYOUT_STABLE or
+            SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+            SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        )
         // Hardware acceleration for fluid 60fps sweep rendering
         setLayerType(LAYER_TYPE_HARDWARE, null)
+    }
+
+    override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
+        // Prevent system from applying insets as padding so the view remains truly edge-to-edge
+        return insets
     }
 
     fun setState(state: AuroraState) {
@@ -119,12 +132,12 @@ class AuroraGlowView @JvmOverloads constructor(
         val density = resources.displayMetrics.density
         val strokeWidth = 3f * density
         val glowWidth = 7f * density
-        val cornerRadius = getScreenCornerRadius()
+        val radii = getScreenCornerRadii()
 
         val halfStroke = strokeWidth / 2f
         borderRect.set(halfStroke, halfStroke, w - halfStroke, h - halfStroke)
         borderPath.reset()
-        borderPath.addRoundRect(borderRect, cornerRadius, cornerRadius, Path.Direction.CW)
+        borderPath.addRoundRect(borderRect, radii, Path.Direction.CW)
 
         val cx = w / 2f
         val cy = h / 2f
@@ -162,20 +175,19 @@ class AuroraGlowView @JvmOverloads constructor(
         canvas.drawPath(borderPath, strokePaint)
     }
 
-    private fun getScreenCornerRadius(): Float {
+    private fun getScreenCornerRadii(): FloatArray {
+        val defaultR = 28f * resources.displayMetrics.density
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val insets = rootWindowInsets
-            val tl = insets?.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius
-            val tr = insets?.getRoundedCorner(RoundedCorner.POSITION_TOP_RIGHT)?.radius
-            val bl = insets?.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT)?.radius
-            val br = insets?.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_RIGHT)?.radius
-            val maxR = listOfNotNull(tl, tr, bl, br).maxOrNull()
-            if (maxR != null && maxR > 0) {
-                return maxR.toFloat()
+            if (insets != null) {
+                val tl = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius?.toFloat() ?: defaultR
+                val tr = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_RIGHT)?.radius?.toFloat() ?: defaultR
+                val br = insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_RIGHT)?.radius?.toFloat() ?: defaultR
+                val bl = insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT)?.radius?.toFloat() ?: defaultR
+                return floatArrayOf(tl, tl, tr, tr, br, br, bl, bl)
             }
         }
-        // Standard modern smartphone rounded corner default (~28dp)
-        return 28f * resources.displayMetrics.density
+        return floatArrayOf(defaultR, defaultR, defaultR, defaultR, defaultR, defaultR, defaultR, defaultR)
     }
 
     private fun getColorsForState(state: AuroraState): IntArray {

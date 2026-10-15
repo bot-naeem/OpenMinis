@@ -173,6 +173,8 @@ object AuroraGlowManager {
                     val view = AuroraGlowView(context.applicationContext)
                     view.setState(state)
 
+                    val (screenW, screenH) = getPhysicalScreenBounds(context)
+
                     val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                     } else {
@@ -181,16 +183,25 @@ object AuroraGlowManager {
                     }
 
                     val params = WindowManager.LayoutParams(
-                        WindowManager.LayoutParams.MATCH_PARENT,
-                        WindowManager.LayoutParams.MATCH_PARENT,
+                        screenW,
+                        screenH,
                         type,
                         WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                             WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                            WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS,
                         PixelFormat.TRANSLUCENT
                     ).apply {
                         gravity = Gravity.TOP or Gravity.START
+                        x = 0
+                        y = 0
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            @Suppress("DEPRECATION")
+                            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                        }
                     }
 
                     wm.addView(view, params)
@@ -228,5 +239,31 @@ object AuroraGlowManager {
 
     private fun hasOverlayPermission(context: Context): Boolean {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
+    }
+
+    /**
+     * Obtains the 100% physical display pixel dimensions (including status bar,
+     * camera punch hole/cutout, and bottom full-screen gesture white bar).
+     */
+    fun getPhysicalScreenBounds(context: Context): Pair<Int, Int> {
+        val wm = context.getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (wm != null) {
+                val bounds = wm.maximumWindowMetrics.bounds
+                if (bounds.width() > 0 && bounds.height() > 0) {
+                    return Pair(bounds.width(), bounds.height())
+                }
+            }
+        }
+        if (wm != null) {
+            val dm = android.util.DisplayMetrics()
+            @Suppress("DEPRECATION")
+            wm.defaultDisplay.getRealMetrics(dm)
+            if (dm.widthPixels > 0 && dm.heightPixels > 0) {
+                return Pair(dm.widthPixels, dm.heightPixels)
+            }
+        }
+        val dm = context.resources.displayMetrics
+        return Pair(dm.widthPixels, dm.heightPixels)
     }
 }
