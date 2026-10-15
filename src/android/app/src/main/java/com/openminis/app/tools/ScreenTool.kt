@@ -103,7 +103,7 @@ object ScreenTool {
 
     fun touchDefinition(): AgentToolDefinition = AgentToolDefinition(
         name = ToolNames.SCREEN_TOUCH,
-        description = "Perform physical touch, swipe, keyboard typing, application launching, system navigation, or user takeover on the Android device (aligned with AutoGLM-Phone and Doubao Phone Assistant / UI-TARS action space). " +
+        description = "Perform physical touch, swipe, keyboard typing, application launching, system navigation, or user takeover on the Android device (aligned with Doubao Phone Assistant / UI-TARS action space). " +
             "Targets can be specified by `app` (name or package to launch), `element` (ID from screen_view SoM, e.g. element=3) OR by normalized coordinates `x, y` (0~1000 scale) / `point=[x, y]`. " +
             "Supported actions: launch, click/tap, double_click, long_press, swipe, scroll, type, press_key, wait, takeover. " +
             "Set `capture_after: true` on any action to immediately capture and return the updated screen in the same turn for instant visual verification. " +

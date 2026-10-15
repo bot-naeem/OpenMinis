@@ -285,7 +285,7 @@ private fun ChooseProviderScreen(
                     ProviderType.openAI -> "OpenAI / Compatible API"
                     ProviderType.anthropic -> "Anthropic / Compatible API"
                     ProviderType.gemini -> "Google Gemini"
-                    ProviderType.glm -> "智谱 GLM (AutoGLM)"
+                    ProviderType.glm -> "智谱 GLM"
                     ProviderType.openRouter -> "OpenRouter"
                     ProviderType.xAI -> "xAI (Grok)"
                     ProviderType.kimiCode -> "Kimi Code"

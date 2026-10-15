@@ -1260,7 +1260,7 @@
     <string name="add_provider_subtitle_openai">Works with Codex, DeepSeek, Moonshot, Groq and other compatible vendors</string>
     <string name="add_provider_subtitle_anthropic">Works with Claude and Anthropic-protocol-compatible services</string>
     <string name="add_provider_subtitle_gemini">Works with the Gemini series and Google AI Studio</string>
-    <string name="add_provider_subtitle_glm">Supports AutoGLM-Phone and GLM flagship models via Zhipu AI BigModel platform</string>
+    <string name="add_provider_subtitle_glm">Supports GLM flagship models via Zhipu AI BigModel platform</string>
     <string name="add_provider_subtitle_openrouter">Aggregates GPT, Claude, Gemini, Llama and other mainstream models</string>
     <string name="add_provider_subtitle_xai">Works with the Grok series of models</string>
     <string name="add_provider_configure_provider">Configure %1$s</string>

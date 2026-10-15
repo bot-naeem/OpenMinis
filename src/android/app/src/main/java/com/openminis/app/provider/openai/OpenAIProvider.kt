@@ -3,8 +3,6 @@ package com.openminis.app.provider.openai
 import android.util.Base64
 import com.openminis.app.data.model.AgentContentPart
 import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.provider.autoglm.AutoGLMAdapter
-import com.openminis.app.provider.autoglm.AutoGLMActionResult
 import com.openminis.app.data.model.LLMError
 import com.openminis.app.data.model.LLMMediaAttachment
 import com.openminis.app.data.model.LLMMessage
@@ -1078,8 +1076,6 @@ class OpenAIProvider private constructor(
         // heuristic only armed extraction for DashScope/qwen ids, which meant
         // MiniMax M3 relied on the mid-stream `text.contains("<think>")` fallback).
         val thinkParser = ThinkPrefixStreamParser()
-        val isAutoGlm = AutoGLMAdapter.isAutoGlm(model.id)
-        val autoGlmAccum = if (isAutoGlm) StringBuilder() else null
 
         // T321: turn-level SSE counters for empty-response triage.
         var sseEventCount = 0
@@ -1545,13 +1541,12 @@ class OpenAIProvider private constructor(
                         // every such body began with a blank line.
                         delta?.safeOptString("content", "")?.let { text ->
                             if (text.isNotEmpty()) {
-                                if (isAutoGlm) autoGlmAccum?.append(text)
                                 val out = thinkParser.feed(text)
                                 if (out.thinking.isNotEmpty()) {
                                     reasoningAccum.append(out.thinking)
                                     send(LLMStreamChunk.ThinkingDelta(out.thinking))
                                 }
-                                if (out.visible.isNotEmpty() && !isAutoGlm) {
+                                if (out.visible.isNotEmpty()) {
                                     send(LLMStreamChunk.Text(out.visible))
                                 }
                             }
@@ -1622,45 +1617,8 @@ class OpenAIProvider private constructor(
                     reasoningAccum.append(fin.thinking)
                     send(LLMStreamChunk.ThinkingDelta(fin.thinking))
                 }
-                if (fin.visible.isNotEmpty() && !isAutoGlm) {
+                if (fin.visible.isNotEmpty()) {
                     send(LLMStreamChunk.Text(fin.visible))
-                }
-            }
-
-            // [AutoGLM-Phone] Synthesize screen_touch tool call from DSL action output
-            if (isAutoGlm && autoGlmAccum != null && autoGlmAccum.isNotEmpty()) {
-                val fullText = autoGlmAccum.toString()
-                when (val parsed = AutoGLMAdapter.parseAction(fullText)) {
-                    is AutoGLMActionResult.Execute -> {
-                        val callId = "call_${System.currentTimeMillis()}"
-                        val toolArgs = parsed.toScreenTouchArgs()
-                        android.util.Log.d(
-                            "ToolChain[Provider]",
-                            "→ AutoGLM ToolCallComplete id=$callId name=${com.openminis.app.tools.ToolNames.SCREEN_TOUCH} args=${toolArgs.toString().take(300)}"
-                        )
-                        if (parsed.reasoning.isNotEmpty()) {
-                            send(LLMStreamChunk.Text(parsed.reasoning))
-                        }
-                        send(LLMStreamChunk.ToolUseStart(callId, com.openminis.app.tools.ToolNames.SCREEN_TOUCH))
-                        send(LLMStreamChunk.ToolCallComplete(callId, com.openminis.app.tools.ToolNames.SCREEN_TOUCH, toolArgs))
-                    }
-                    is AutoGLMActionResult.Finish -> {
-                        android.util.Log.d("ToolChain[Provider]", "→ AutoGLM Task Finish: ${parsed.message}")
-                        val reply = if (parsed.reasoning.isNotEmpty()) {
-                            "${parsed.reasoning}\n\n${parsed.message}"
-                        } else {
-                            parsed.message
-                        }
-                        if (reply.isNotEmpty()) {
-                            send(LLMStreamChunk.Text(reply))
-                        }
-                    }
-                    is AutoGLMActionResult.None -> {
-                        val cleaned = AutoGLMAdapter.cleanReasoningText(fullText)
-                        if (cleaned.isNotEmpty()) {
-                            send(LLMStreamChunk.Text(cleaned))
-                        }
-                    }
                 }
             }
 
@@ -2284,8 +2242,7 @@ class OpenAIProvider private constructor(
         }
 
         // Tools
-        val isAutoGlm = AutoGLMAdapter.isAutoGlm(model.id)
-        if (tools.isNotEmpty() && !isAutoGlm) {
+        if (tools.isNotEmpty()) {
             val toolsArray = JSONArray()
             for (tool in tools) {
                 toolsArray.put(tool.toOpenAIJson())
@@ -2348,221 +2305,145 @@ class OpenAIProvider private constructor(
                     msg.role == LLMMessage.Role.ASSISTANT -> {
                         val obj = JSONObject()
                         obj.put("role", "assistant")
-                        if (isAutoGlm) {
-                            val toolUseParts = msg.contentParts.filterIsInstance<AgentContentPart.ToolUse>()
-                            val textParts = msg.contentParts.filterIsInstance<AgentContentPart.Text>()
-                            val contentSb = StringBuilder()
-                            if (textParts.isNotEmpty()) {
-                                contentSb.append(textParts.joinToString("") { it.text })
+                        if (echoReasoning) {
+                            val rc = msg.reasoningContent
+                            if (rc != null) {
+                                obj.put("reasoning_content", rc)
+                            } else if (placeholderAllowed) {
+                                obj.put("reasoning_content", "")
                             }
-                            for (tu in toolUseParts) {
-                                val dsl = AutoGLMAdapter.formatToAutoGLM(tu.input)
-                                if (dsl.isNotEmpty()) {
-                                    if (contentSb.isNotEmpty() && !contentSb.endsWith("\n")) {
-                                        contentSb.append("\n")
-                                    }
-                                    contentSb.append(dsl)
-                                }
-                            }
-                            obj.put("content", if (contentSb.isNotEmpty()) contentSb.toString() else msg.content)
-                            messagesArray.put(obj)
-                        } else {
-                            if (echoReasoning) {
-                                val rc = msg.reasoningContent
-                                if (rc != null) {
-                                    obj.put("reasoning_content", rc)
-                                } else if (placeholderAllowed) {
-                                    obj.put("reasoning_content", "")
-                                }
-                            }
-                            val textParts = msg.contentParts.filterIsInstance<AgentContentPart.Text>()
-                            if (textParts.isNotEmpty()) {
-                                obj.put("content", textParts.joinToString("") { it.text })
-                            }
-                            val toolUseParts = msg.contentParts.filterIsInstance<AgentContentPart.ToolUse>()
-                            if (toolUseParts.isNotEmpty()) {
-                                val toolCallsArr = JSONArray()
-                                for (tu in toolUseParts) {
-                                    toolCallsArr.put(JSONObject().apply {
-                                        put("id", capChatToolCallId(tu.id))
-                                        put("type", "function")
-                                        put("function", JSONObject().apply {
-                                            put("name", tu.name)
-                                            put("arguments", tu.input.toString())
-                                        })
-                                    })
-                                }
-                                obj.put("tool_calls", toolCallsArr)
-                            }
-                            messagesArray.put(obj)
                         }
+                        val textParts = msg.contentParts.filterIsInstance<AgentContentPart.Text>()
+                        if (textParts.isNotEmpty()) {
+                            obj.put("content", textParts.joinToString("") { it.text })
+                        }
+                        val toolUseParts = msg.contentParts.filterIsInstance<AgentContentPart.ToolUse>()
+                        if (toolUseParts.isNotEmpty()) {
+                            val toolCallsArr = JSONArray()
+                            for (tu in toolUseParts) {
+                                toolCallsArr.put(JSONObject().apply {
+                                    put("id", capChatToolCallId(tu.id))
+                                    put("type", "function")
+                                    put("function", JSONObject().apply {
+                                        put("name", tu.name)
+                                        put("arguments", tu.input.toString())
+                                    })
+                                })
+                            }
+                            obj.put("tool_calls", toolCallsArr)
+                        }
+                        messagesArray.put(obj)
                     }
                     // User with tool_results → emit separate tool messages
                     msg.role == LLMMessage.Role.USER -> {
                         val toolResults = msg.contentParts.filterIsInstance<AgentContentPart.ToolResult>()
-                        val textParts = msg.contentParts.filterIsInstance<AgentContentPart.Text>()
-                        val imageParts = msg.contentParts.filterIsInstance<AgentContentPart.ImageData>()
-
-                        if (isAutoGlm && toolResults.isNotEmpty()) {
-                            // [AutoGLM-Phone] Multi-turn continues as a user turn carrying the fresh screenshot
-                            val contentArr = JSONArray()
-                            for (tp in textParts) {
-                                if (tp.text.isNotEmpty()) {
-                                    contentArr.put(JSONObject().apply {
-                                        put("type", "text")
-                                        put("text", tp.text)
-                                    })
-                                }
-                            }
-                            for (img in imageParts) {
-                                if (supportsImages) {
-                                    val upload = com.openminis.app.provider.ImageBudget.prepareForUpload(img.data, img.mimeType)
-                                    if (upload != null) {
-                                        contentArr.put(JSONObject().apply {
-                                            put("type", "image_url")
-                                            put("image_url", JSONObject().apply {
-                                                put("url", upload.dataUrl())
-                                            })
-                                        })
-                                    }
-                                }
-                            }
-                            for (tr in toolResults) {
-                                val trBytes = tr.imageData
-                                if (trBytes != null && trBytes.isNotEmpty() && supportsImages) {
-                                    val upload = com.openminis.app.provider.ImageBudget.prepareForUpload(trBytes, tr.imageMimeType)
-                                    if (upload != null) {
-                                        contentArr.put(JSONObject().apply {
-                                            put("type", "image_url")
-                                            put("image_url", JSONObject().apply {
-                                                put("url", upload.dataUrl())
-                                            })
-                                        })
-                                    }
-                                } else if (tr.content.isNotEmpty()) {
-                                    contentArr.put(JSONObject().apply {
-                                        put("type", "text")
-                                        put("text", tr.content)
-                                    })
-                                }
-                            }
-                            if (contentArr.length() == 0) {
-                                contentArr.put(JSONObject().apply {
-                                    put("type", "text")
-                                    put("text", "[Action completed]")
-                                })
-                            }
+                        val imageCarriers = mutableListOf<JSONObject>()
+                        for (tr in toolResults) {
                             messagesArray.put(JSONObject().apply {
-                                put("role", "user")
-                                put("content", contentArr)
+                                put("role", "tool")
+                                put("tool_call_id", capChatToolCallId(tr.id))
+                                put("content", tr.content)
                             })
-                        } else {
-                            val imageCarriers = mutableListOf<JSONObject>()
-                            for (tr in toolResults) {
-                                messagesArray.put(JSONObject().apply {
-                                    put("role", "tool")
-                                    put("tool_call_id", capChatToolCallId(tr.id))
-                                    put("content", tr.content)
-                                })
-                                val trBytes = tr.imageData
-                                if (trBytes != null && trBytes.isNotEmpty() && supportsImages) {
-                                    val upload = com.openminis.app.provider.ImageBudget
-                                        .prepareForUpload(trBytes, tr.imageMimeType)
-                                    imageCarriers.add(JSONObject().apply {
-                                        put("role", "user")
-                                        put("content", JSONArray().apply {
-                                            put(JSONObject().apply {
-                                                put("type", "text")
-                                                put(
-                                                    "text",
-                                                    "[Image returned by ${tr.name} " +
-                                                        "(tool_call_id: ${capChatToolCallId(tr.id)})]",
-                                                )
-                                            })
+                            val trBytes = tr.imageData
+                            if (trBytes != null && trBytes.isNotEmpty() && supportsImages) {
+                                val upload = com.openminis.app.provider.ImageBudget
+                                    .prepareForUpload(trBytes, tr.imageMimeType)
+                                imageCarriers.add(JSONObject().apply {
+                                    put("role", "user")
+                                    put("content", JSONArray().apply {
+                                        put(JSONObject().apply {
+                                            put("type", "text")
                                             put(
-                                                if (upload != null) JSONObject().apply {
-                                                    put("type", "image_url")
-                                                    put("image_url", JSONObject().apply {
-                                                        put("url", upload.dataUrl())
-                                                    })
-                                                } else JSONObject().apply {
-                                                    put("type", "text")
-                                                    put("text", com.openminis.app.provider.ImageBudget.UNSENDABLE_IMAGE_PLACEHOLDER)
-                                                },
+                                                "text",
+                                                "[Image returned by ${tr.name} " +
+                                                    "(tool_call_id: ${capChatToolCallId(tr.id)})]",
                                             )
                                         })
+                                        put(
+                                            if (upload != null) JSONObject().apply {
+                                                put("type", "image_url")
+                                                put("image_url", JSONObject().apply {
+                                                    put("url", upload.dataUrl())
+                                                })
+                                            } else JSONObject().apply {
+                                                put("type", "text")
+                                                put("text", com.openminis.app.provider.ImageBudget.UNSENDABLE_IMAGE_PLACEHOLDER)
+                                            },
+                                        )
                                     })
-                                }
+                                })
                             }
-                            for (carrier in imageCarriers) messagesArray.put(carrier)
-                            // T132: emit text + image_url parts as a structured user
-                            // message. The previous structured-contentParts branch
-                            // dropped AgentContentPart.ImageData entirely — only the
-                            // legacy non-contentParts path knew how to encode images,
-                            // and that path is unreachable once contentParts is
-                            // populated (which is always now). Mirrors iOS
-                            // OpenAIAgentProvider.swift L732-738.
-                            val hasImages = imageParts.isNotEmpty()
-                            if (hasImages || textParts.isNotEmpty()) {
-                                if (hasImages) {
-                                    val contentArray = JSONArray()
-                                    // Walk contentParts in original order so the
-                                    // [attached image: …] text caption that
-                                    // precedes each ImageData part stays adjacent
-                                    // to the right image, matching iOS.
-                                    for (part in msg.contentParts) {
-                                        when (part) {
-                                            is AgentContentPart.Text -> {
-                                                if (part.text.isNotEmpty()) {
-                                                    contentArray.put(JSONObject().apply {
-                                                        put("type", "text")
-                                                        put("text", part.text)
-                                                    })
-                                                }
+                        }
+                        for (carrier in imageCarriers) messagesArray.put(carrier)
+                        // T132: emit text + image_url parts as a structured user
+                        // message. The previous structured-contentParts branch
+                        // dropped AgentContentPart.ImageData entirely — only the
+                        // legacy non-contentParts path knew how to encode images,
+                        // and that path is unreachable once contentParts is
+                        // populated (which is always now). Mirrors iOS
+                        // OpenAIAgentProvider.swift L732-738.
+                        val imageParts = msg.contentParts.filterIsInstance<AgentContentPart.ImageData>()
+                        val textParts = msg.contentParts.filterIsInstance<AgentContentPart.Text>()
+                        val hasImages = imageParts.isNotEmpty()
+                        if (hasImages || textParts.isNotEmpty()) {
+                            if (hasImages) {
+                                val contentArray = JSONArray()
+                                // Walk contentParts in original order so the
+                                // [attached image: …] text caption that
+                                // precedes each ImageData part stays adjacent
+                                // to the right image, matching iOS.
+                                for (part in msg.contentParts) {
+                                    when (part) {
+                                        is AgentContentPart.Text -> {
+                                            if (part.text.isNotEmpty()) {
+                                                contentArray.put(JSONObject().apply {
+                                                    put("type", "text")
+                                                    put("text", part.text)
+                                                })
                                             }
-                                            is AgentContentPart.ImageData -> {
-                                                if (supportsImages) {
-                                                    // T-imgsize + [T-android-image-upload-format]:
-                                                    // accepted format, byte budget, and a MIME
-                                                    // that matches the bytes actually sent.
-                                                    val upload = com.openminis.app.provider.ImageBudget.prepareForUpload(part.data, part.mimeType)
-                                                    contentArray.put(
-                                                        if (upload != null) JSONObject().apply {
-                                                            put("type", "image_url")
-                                                            put("image_url", JSONObject().apply {
-                                                                put("url", upload.dataUrl())
-                                                            })
-                                                        } else JSONObject().apply {
-                                                            put("type", "text")
-                                                            put("text", com.openminis.app.provider.ImageBudget.UNSENDABLE_IMAGE_PLACEHOLDER)
-                                                        },
-                                                    )
-                                                } else {
-                                                    // T264: target model has no vision modality —
-                                                    // emit a text placeholder in place of the pixels.
-                                                    // [T-android-vision-group / GH#182] Vision-Group
-                                                    // read_image hint when seeded (carries the path);
-                                                    // else the historical literal.
-                                                    contentArray.put(JSONObject().apply {
-                                                        put("type", "text")
-                                                        put("text", part.noVisionPlaceholder
-                                                            ?: "[Image attached but this model does not support vision input]")
-                                                    })
-                                                }
-                                            }
-                                            else -> Unit  // ToolUse/ToolResult never appear on user role here
                                         }
+                                        is AgentContentPart.ImageData -> {
+                                            if (supportsImages) {
+                                                // T-imgsize + [T-android-image-upload-format]:
+                                                // accepted format, byte budget, and a MIME
+                                                // that matches the bytes actually sent.
+                                                val upload = com.openminis.app.provider.ImageBudget.prepareForUpload(part.data, part.mimeType)
+                                                contentArray.put(
+                                                    if (upload != null) JSONObject().apply {
+                                                        put("type", "image_url")
+                                                        put("image_url", JSONObject().apply {
+                                                            put("url", upload.dataUrl())
+                                                        })
+                                                    } else JSONObject().apply {
+                                                        put("type", "text")
+                                                        put("text", com.openminis.app.provider.ImageBudget.UNSENDABLE_IMAGE_PLACEHOLDER)
+                                                    },
+                                                )
+                                            } else {
+                                                // T264: target model has no vision modality —
+                                                // emit a text placeholder in place of the pixels.
+                                                // [T-android-vision-group / GH#182] Vision-Group
+                                                // read_image hint when seeded (carries the path);
+                                                // else the historical literal.
+                                                contentArray.put(JSONObject().apply {
+                                                    put("type", "text")
+                                                    put("text", part.noVisionPlaceholder
+                                                        ?: "[Image attached but this model does not support vision input]")
+                                                })
+                                            }
+                                        }
+                                        else -> Unit  // ToolUse/ToolResult never appear on user role here
                                     }
-                                    messagesArray.put(JSONObject().apply {
-                                        put("role", "user")
-                                        put("content", contentArray)
-                                    })
-                                } else {
-                                    messagesArray.put(JSONObject().apply {
-                                        put("role", "user")
-                                        put("content", textParts.joinToString("") { it.text })
-                                    })
                                 }
+                                messagesArray.put(JSONObject().apply {
+                                    put("role", "user")
+                                    put("content", contentArray)
+                                })
+                            } else {
+                                messagesArray.put(JSONObject().apply {
+                                    put("role", "user")
+                                    put("content", textParts.joinToString("") { it.text })
+                                })
                             }
                         }
                     }

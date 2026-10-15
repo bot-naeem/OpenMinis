@@ -212,16 +212,7 @@ data class LLMModel(
 
         val allKimi = listOf(kimiK3, kimiK2)
 
-        // Zhipu GLM & AutoGLM-Phone
-        val autoGlmPhone = LLMModel(
-            id = "autoglm-phone",
-            displayName = "AutoGLM Phone",
-            provider = "GLM",
-            contextWindow = 20_480,
-            maxOutputTokens = 2048,
-            inputModalities = listOf("text", "image"),
-            outputModalities = listOf("text"),
-        )
+        // Zhipu GLM
         val glm53 = LLMModel(
             id = "glm-5.3",
             displayName = "GLM 5.3",
@@ -233,7 +224,7 @@ data class LLMModel(
             supportsReasoning = true,
         )
 
-        val allGlm = listOf(autoGlmPhone, glm53)
+        val allGlm = listOf(glm53)
 
         val allModels = allAnthropic + allGemini + allOpenAI + allOpenRouter + allXAI + allKimi + allGlm
 
@@ -263,7 +254,6 @@ data class LLMModel(
                 "mixtral" to "Mixtral",
                 "qwen" to "Qwen",
                 "yi" to "Yi",
-                "autoglm" to "AutoGLM",
             )
             // [T-android-modeldisplayname-ios-parity] Reflow BOTH separators
             // into spaces, exactly as iOS does.
@@ -363,8 +353,7 @@ data class LLMModel(
                 if (lid.contains("grok-2") || lid.contains("grok-3")) return 131_072
                 return 256_000
             }
-            // Zhipu GLM & AutoGLM
-            if (lid.contains("autoglm-phone")) return 20_480
+            // Zhipu GLM
             if (lid.contains("glm-5")) return 1_000_000
             if (lid.contains("glm")) return 128_000
             // Default: assume a modern long-context model rather than 64K so the
@@ -424,10 +413,6 @@ data class LLMModel(
     fun agentBehaviorPromptFragment(): String? {
         val idLower = id.lowercase()
         val providerLower = provider.lowercase()
-
-        if (idLower.contains("autoglm")) {
-            return "You are AutoGLM operating an Android smartphone via mobile automation. Follow the perceive-plan-act-verify loop: call screen_view or screen_touch with capture_after=true to visually verify every action. For text input, always specify point=[x, y] to focus before typing, visually verify text is on screen, then click send."
-        }
 
         if (providerLower == "google" || idLower.contains("gemini")) {
             return "When you need to use a tool, invoke it via the function-calling mechanism directly. Do not emit tool invocations as plain text — they will not be executed."
