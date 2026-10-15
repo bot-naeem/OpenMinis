@@ -148,6 +148,14 @@ class ChatViewModel(
          */
         const val MAX_CONCURRENT_TOOLS = 10
 
+        /**
+         * [T-image-context-keep-count] Parity with iOS kImageContextKeepCount = 20.
+         * For small-window models (<= 32k) or AutoGLM, we keep 2 so mobile GUI
+         * automation doesn't blow through the 20k context window.
+         */
+        const val IMAGE_CONTEXT_KEEP_COUNT_DEFAULT = 20
+        const val IMAGE_CONTEXT_KEEP_COUNT_AUTOGLM = 2
+
         /** [T-android-parity-fixes] Ceiling on shell_execute `timeout`, stated
          *  in the tool schema (AgentTools.shellExecuteDefinition). */
         const val SHELL_TIMEOUT_MAX_SEC = 3600
@@ -1437,7 +1445,13 @@ class ChatViewModel(
      */
     private fun ensureContextFixedTokens() {
         if (contextFixedTokens > 0) return
-        contextFixedTokens = ContextSizeMeter.estimateFixedTokens(buildSystemPrompt(), agentTools)
+        val activeModelId = currentModel?.id ?: currentProvider?.model?.id
+        val toolsForMeasurement = if (com.openminis.app.provider.autoglm.AutoGLMAdapter.isAutoGlm(activeModelId)) {
+            emptyList()
+        } else {
+            agentTools
+        }
+        contextFixedTokens = ContextSizeMeter.estimateFixedTokens(buildSystemPrompt(), toolsForMeasurement)
     }
 
     /**
@@ -4398,6 +4412,117 @@ class ChatViewModel(
     /** Local 4-tuple so the audit's per-part extraction stays one expression. */
     private data class Quad(val a: Int, val b: Int, val c: String, val d: String?)
 
+    /**
+     * Trim old images from [agentHistory] so at most [IMAGE_CONTEXT_KEEP_COUNT_DEFAULT]
+     * (or [IMAGE_CONTEXT_KEEP_COUNT_AUTOGLM] for AutoGLM / small-window models) images
+     * remain in history as real bytes. Older images are replaced with a text placeholder
+     * pointing to their offloaded path. Mirrors iOS `trimOldImagesFromHistory()`.
+     */
+    internal fun trimOldImagesFromHistory(explicitKeepCount: Int? = null) {
+        val activeModelId = currentModel?.id ?: currentProvider?.model?.id
+        val isAutoGlm = com.openminis.app.provider.autoglm.AutoGLMAdapter.isAutoGlm(activeModelId)
+        val window = effectiveContextWindowTokens() ?: 0
+        val keep = explicitKeepCount ?: when {
+            isAutoGlm || (window in 1..32_000) -> IMAGE_CONTEXT_KEEP_COUNT_AUTOGLM
+            else -> IMAGE_CONTEXT_KEEP_COUNT_DEFAULT
+        }
+
+        var totalImages = 0
+        for (msg in agentHistory) {
+            for (part in msg.contentParts) {
+                when (part) {
+                    is AgentContentPart.ToolResult -> if (part.imageData != null && part.imageData.isNotEmpty()) totalImages++
+                    is AgentContentPart.ImageData -> if (part.data.isNotEmpty()) totalImages++
+                    else -> Unit
+                }
+            }
+        }
+        if (totalImages <= keep) return
+
+        val evictCount = totalImages - keep
+        var evicted = 0
+        val sid = activeSessionId
+
+        for (mi in agentHistory.indices) {
+            if (evicted >= evictCount) break
+            val msg = agentHistory[mi]
+            val parts = msg.contentParts.toMutableList()
+            var mutated = false
+
+            for (pi in parts.indices) {
+                if (evicted >= evictCount) break
+                when (val part = parts[pi]) {
+                    is AgentContentPart.ToolResult -> {
+                        val data = part.imageData ?: continue
+                        if (data.isEmpty()) continue
+
+                        val linuxPath = part.imageLinuxPath ?: if (sid != null) {
+                            ContextOffload.offloadImage(
+                                context, sid, data,
+                                toolId = part.id,
+                                mimeType = part.imageMimeType ?: "image/jpeg",
+                            )
+                        } else ""
+
+                        val placeholder = if (linuxPath.isNotEmpty()) {
+                            "[image omitted to save context — saved to $linuxPath, use read_image to view again]"
+                        } else {
+                            "[image omitted to save context]"
+                        }
+                        val newContent = if (part.content.isEmpty()) {
+                            placeholder
+                        } else if (part.content.contains("[image omitted to save context")) {
+                            part.content
+                        } else {
+                            part.content + "\n\n" + placeholder
+                        }
+
+                        parts[pi] = part.copy(
+                            imageData = null,
+                            imageMimeType = null,
+                            content = newContent,
+                        )
+                        mutated = true
+                        evicted++
+                    }
+                    is AgentContentPart.ImageData -> {
+                        val data = part.data
+                        if (data.isEmpty()) continue
+
+                        val synthId = "img-${sid ?: "s"}-$mi-$pi"
+                        val linuxPath = part.linuxPath ?: if (sid != null) {
+                            ContextOffload.offloadImage(
+                                context, sid, data,
+                                toolId = synthId,
+                                mimeType = part.mimeType,
+                            )
+                        } else ""
+
+                        val placeholder = if (linuxPath.isNotEmpty()) {
+                            "[image omitted to save context — saved to $linuxPath, use read_image to view again]"
+                        } else {
+                            "[image omitted to save context]"
+                        }
+
+                        parts[pi] = AgentContentPart.Text(placeholder)
+                        mutated = true
+                        evicted++
+                    }
+                    else -> Unit
+                }
+            }
+
+            if (mutated) {
+                agentHistory[mi] = msg.copy(contentParts = parts)
+            }
+        }
+
+        AppLogger.info(
+            TAG,
+            "[Context] trimOldImagesFromHistory: evicted $evicted images, keeping most recent $keep (total was $totalImages)",
+        )
+    }
+
     private fun applyRequestImageBudget(messages: List<LLMMessage>): List<LLMMessage> {
         // Collect every image in chronological order so the planner can
         // walk in reverse and protect the most recent images.
@@ -5442,6 +5567,7 @@ class ChatViewModel(
         // [T-ctx-measure-outbound] Judge the request about to go out, not the
         // provider's count for the previous one — which after a /compact or a
         // revert described a context that no longer exists.
+        trimOldImagesFromHistory()
         ensureContextFixedTokens()
         val m = contextMeasurement()
         val tokens = m.measured
@@ -10995,13 +11121,18 @@ class ChatViewModel(
             // [T-context-window-live-read] Live read per loop turn — a stale
             // snapshot inside a long-running agent turn is exactly the iOS
             // fcc22b66 item-3 bug.
+            // Trim old images: keep only the most recent images in history.
+            // Runs before fixed token measurement and token-based offload so
+            // image bytes are removed first. Mirrors iOS AIChatViewModel.swift:6334.
+            trimOldImagesFromHistory()
+
             // [T-ctx-measure-outbound] System prompt + tool schemas ride on every
             // request; measure them for this iteration (the helper wrap-up path
-            // drops the tools) so the guards and the calibration pair see the
-            // real fixed share.
+            // drops the tools, and AutoGLM does not pass API tools) so the guards
+            // and the calibration pair see the real fixed share.
             contextFixedTokens = ContextSizeMeter.estimateFixedTokens(
                 loopSystemPrompt,
-                if (helperWrapUpInjected) emptyList() else agentTools,
+                if (helperWrapUpInjected || com.openminis.app.provider.autoglm.AutoGLMAdapter.isAutoGlm(currentProvider.model.id)) emptyList() else agentTools,
             )
             effectiveContextWindowTokens()?.takeIf { it > 0 }?.let { window ->
                 offloadContextIfNeeded(

@@ -242,4 +242,69 @@ class ToolResultImageSerializationTest {
             typesIn(body).contains("image_url"),
         )
     }
+
+    @Test
+    fun `autoglm multi-turn serialization includes image_url when image present`() {
+        val autoGlmModel = LLMModel(
+            id = "autoglm-phone",
+            displayName = "AutoGLM Phone",
+            provider = "glm",
+            inputModalities = listOf("text", "image"),
+        )
+        val history = listOf(
+            LLMMessage(LLMMessage.Role.USER, "打开微信"),
+            LLMMessage(
+                role = LLMMessage.Role.USER,
+                content = "",
+                contentParts = listOf(
+                    AgentContentPart.ToolResult(
+                        id = "call_screen",
+                        name = "screen_touch",
+                        content = "ok",
+                        imageData = pngBytes,
+                        imageMimeType = "image/png",
+                    ),
+                ),
+            ),
+        )
+        val body = bodyOf(provider(autoGlmModel), history)
+        val types = typesIn(body)
+        assertTrue(types.contains("image_url"))
+    }
+
+    @Test
+    fun `autoglm multi-turn serialization formats trimmed tool result as text without dropping turn`() {
+        val autoGlmModel = LLMModel(
+            id = "autoglm-phone",
+            displayName = "AutoGLM Phone",
+            provider = "glm",
+            inputModalities = listOf("text", "image"),
+        )
+        val history = listOf(
+            LLMMessage(LLMMessage.Role.USER, "打开微信"),
+            LLMMessage(
+                role = LLMMessage.Role.USER,
+                content = "",
+                contentParts = listOf(
+                    AgentContentPart.ToolResult(
+                        id = "call_screen",
+                        name = "screen_touch",
+                        content = "[image omitted to save context]",
+                        imageData = null,
+                        imageMimeType = null,
+                    ),
+                ),
+            ),
+        )
+        val body = bodyOf(provider(autoGlmModel), history)
+        val msgs = body.getJSONArray("messages")
+        assertEquals(2, msgs.length())
+        val userTurn = msgs.getJSONObject(1)
+        assertEquals("user", userTurn.getString("role"))
+        val contentArr = userTurn.getJSONArray("content")
+        assertEquals(1, contentArr.length())
+        val textObj = contentArr.getJSONObject(0)
+        assertEquals("text", textObj.getString("type"))
+        assertEquals("[image omitted to save context]", textObj.getString("text"))
+    }
 }

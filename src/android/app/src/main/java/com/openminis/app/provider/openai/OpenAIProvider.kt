@@ -2439,14 +2439,23 @@ class OpenAIProvider private constructor(
                                             })
                                         })
                                     }
+                                } else if (tr.content.isNotEmpty()) {
+                                    contentArr.put(JSONObject().apply {
+                                        put("type", "text")
+                                        put("text", tr.content)
+                                    })
                                 }
                             }
-                            if (contentArr.length() > 0) {
-                                messagesArray.put(JSONObject().apply {
-                                    put("role", "user")
-                                    put("content", contentArr)
+                            if (contentArr.length() == 0) {
+                                contentArr.put(JSONObject().apply {
+                                    put("type", "text")
+                                    put("text", "[Action completed]")
                                 })
                             }
+                            messagesArray.put(JSONObject().apply {
+                                put("role", "user")
+                                put("content", contentArr)
+                            })
                         } else {
                             val imageCarriers = mutableListOf<JSONObject>()
                             for (tr in toolResults) {
@@ -2486,74 +2495,74 @@ class OpenAIProvider private constructor(
                                 }
                             }
                             for (carrier in imageCarriers) messagesArray.put(carrier)
-                        }
-                        // T132: emit text + image_url parts as a structured user
-                        // message. The previous structured-contentParts branch
-                        // dropped AgentContentPart.ImageData entirely — only the
-                        // legacy non-contentParts path knew how to encode images,
-                        // and that path is unreachable once contentParts is
-                        // populated (which is always now). Mirrors iOS
-                        // OpenAIAgentProvider.swift L732-738.
-                        val hasImages = imageParts.isNotEmpty()
-                        if (hasImages || textParts.isNotEmpty()) {
-                            if (hasImages) {
-                                val contentArray = JSONArray()
-                                // Walk contentParts in original order so the
-                                // [attached image: …] text caption that
-                                // precedes each ImageData part stays adjacent
-                                // to the right image, matching iOS.
-                                for (part in msg.contentParts) {
-                                    when (part) {
-                                        is AgentContentPart.Text -> {
-                                            if (part.text.isNotEmpty()) {
-                                                contentArray.put(JSONObject().apply {
-                                                    put("type", "text")
-                                                    put("text", part.text)
-                                                })
-                                            }
-                                        }
-                                        is AgentContentPart.ImageData -> {
-                                            if (supportsImages) {
-                                                // T-imgsize + [T-android-image-upload-format]:
-                                                // accepted format, byte budget, and a MIME
-                                                // that matches the bytes actually sent.
-                                                val upload = com.openminis.app.provider.ImageBudget.prepareForUpload(part.data, part.mimeType)
-                                                contentArray.put(
-                                                    if (upload != null) JSONObject().apply {
-                                                        put("type", "image_url")
-                                                        put("image_url", JSONObject().apply {
-                                                            put("url", upload.dataUrl())
-                                                        })
-                                                    } else JSONObject().apply {
+                            // T132: emit text + image_url parts as a structured user
+                            // message. The previous structured-contentParts branch
+                            // dropped AgentContentPart.ImageData entirely — only the
+                            // legacy non-contentParts path knew how to encode images,
+                            // and that path is unreachable once contentParts is
+                            // populated (which is always now). Mirrors iOS
+                            // OpenAIAgentProvider.swift L732-738.
+                            val hasImages = imageParts.isNotEmpty()
+                            if (hasImages || textParts.isNotEmpty()) {
+                                if (hasImages) {
+                                    val contentArray = JSONArray()
+                                    // Walk contentParts in original order so the
+                                    // [attached image: …] text caption that
+                                    // precedes each ImageData part stays adjacent
+                                    // to the right image, matching iOS.
+                                    for (part in msg.contentParts) {
+                                        when (part) {
+                                            is AgentContentPart.Text -> {
+                                                if (part.text.isNotEmpty()) {
+                                                    contentArray.put(JSONObject().apply {
                                                         put("type", "text")
-                                                        put("text", com.openminis.app.provider.ImageBudget.UNSENDABLE_IMAGE_PLACEHOLDER)
-                                                    },
-                                                )
-                                            } else {
-                                                // T264: target model has no vision modality —
-                                                // emit a text placeholder in place of the pixels.
-                                                // [T-android-vision-group / GH#182] Vision-Group
-                                                // read_image hint when seeded (carries the path);
-                                                // else the historical literal.
-                                                contentArray.put(JSONObject().apply {
-                                                    put("type", "text")
-                                                    put("text", part.noVisionPlaceholder
-                                                        ?: "[Image attached but this model does not support vision input]")
-                                                })
+                                                        put("text", part.text)
+                                                    })
+                                                }
                                             }
+                                            is AgentContentPart.ImageData -> {
+                                                if (supportsImages) {
+                                                    // T-imgsize + [T-android-image-upload-format]:
+                                                    // accepted format, byte budget, and a MIME
+                                                    // that matches the bytes actually sent.
+                                                    val upload = com.openminis.app.provider.ImageBudget.prepareForUpload(part.data, part.mimeType)
+                                                    contentArray.put(
+                                                        if (upload != null) JSONObject().apply {
+                                                            put("type", "image_url")
+                                                            put("image_url", JSONObject().apply {
+                                                                put("url", upload.dataUrl())
+                                                            })
+                                                        } else JSONObject().apply {
+                                                            put("type", "text")
+                                                            put("text", com.openminis.app.provider.ImageBudget.UNSENDABLE_IMAGE_PLACEHOLDER)
+                                                        },
+                                                    )
+                                                } else {
+                                                    // T264: target model has no vision modality —
+                                                    // emit a text placeholder in place of the pixels.
+                                                    // [T-android-vision-group / GH#182] Vision-Group
+                                                    // read_image hint when seeded (carries the path);
+                                                    // else the historical literal.
+                                                    contentArray.put(JSONObject().apply {
+                                                        put("type", "text")
+                                                        put("text", part.noVisionPlaceholder
+                                                            ?: "[Image attached but this model does not support vision input]")
+                                                    })
+                                                }
+                                            }
+                                            else -> Unit  // ToolUse/ToolResult never appear on user role here
                                         }
-                                        else -> Unit  // ToolUse/ToolResult never appear on user role here
                                     }
+                                    messagesArray.put(JSONObject().apply {
+                                        put("role", "user")
+                                        put("content", contentArray)
+                                    })
+                                } else {
+                                    messagesArray.put(JSONObject().apply {
+                                        put("role", "user")
+                                        put("content", textParts.joinToString("") { it.text })
+                                    })
                                 }
-                                messagesArray.put(JSONObject().apply {
-                                    put("role", "user")
-                                    put("content", contentArray)
-                                })
-                            } else {
-                                messagesArray.put(JSONObject().apply {
-                                    put("role", "user")
-                                    put("content", textParts.joinToString("") { it.text })
-                                })
                             }
                         }
                     }
