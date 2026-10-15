@@ -592,6 +592,9 @@ object SessionActivityTracker {
         synchronized(streamCancellers) { streamCancellers.remove(sessionId) }
         val wasError = synchronized(pendingErrorFlag) { pendingErrorFlag.remove(sessionId) }
         Log.d(TAG, "Session deactivated: $sessionId (total: ${_activeSessions.value.size})")
+        appContext?.let { ctx ->
+            com.openminis.app.ime.ImeManager.release(ctx, sessionId)
+        }
 
         if (_activeSessions.value.isEmpty()) {
             _currentToolStatus.value = "Idle"

@@ -13173,6 +13173,7 @@ class ChatViewModel(
         } else {
             AppLogger.info(TAG_STREAM, "runAgentLoop EXIT (loop body ended naturally)")
         }
+        com.openminis.app.ime.ImeManager.release(context, activeSessionId)
     }
 
     /**

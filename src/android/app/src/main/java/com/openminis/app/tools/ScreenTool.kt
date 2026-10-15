@@ -210,6 +210,9 @@ object ScreenTool {
         context: Context,
     ): ToolExecutionResult {
         val (screenW, screenH) = getDisplayBounds(context)
+        sessionId?.let { sid ->
+            com.openminis.app.ime.ImeManager.acquire(context, sid)
+        }
 
         return when (action) {
             "launch", "open_app" -> {
@@ -1134,6 +1137,17 @@ object ScreenTool {
         targetCoords: QuadCoords? = null,
         clearFirst: Boolean = false,
     ): ScreenActionResult {
+        // Strategy 0: If MinisKeyboardService is active and connected, inject directly via InputConnection
+        if (com.openminis.app.ime.MinisKeyboardService.isConnected) {
+            if (clearFirst) {
+                com.openminis.app.ime.MinisKeyboardService.clearText()
+                sleepQuietly(50)
+            }
+            if (com.openminis.app.ime.MinisKeyboardService.injectText(text)) {
+                return ScreenActionResult(true, "minis_ime")
+            }
+        }
+
         val backends = resolveActionBackends(backendPref)
 
         // 1. Preload clipboard with exact text (supports UTF-8 Chinese, emojis, symbols, newlines)
@@ -1213,6 +1227,16 @@ object ScreenTool {
     }
 
     private fun performKey(keyStr: String, context: Context, backendPref: String): ScreenActionResult {
+        val normalizedKey = keyStr.trim().lowercase()
+        if (com.openminis.app.ime.MinisKeyboardService.isConnected) {
+            when (normalizedKey) {
+                "enter" -> if (com.openminis.app.ime.MinisKeyboardService.sendKeyCode(android.view.KeyEvent.KEYCODE_ENTER)) return ScreenActionResult(true, "minis_ime")
+                "search" -> if (com.openminis.app.ime.MinisKeyboardService.sendEditorAction(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH)) return ScreenActionResult(true, "minis_ime")
+                "send" -> if (com.openminis.app.ime.MinisKeyboardService.sendEditorAction(android.view.inputmethod.EditorInfo.IME_ACTION_SEND)) return ScreenActionResult(true, "minis_ime")
+                "done" -> if (com.openminis.app.ime.MinisKeyboardService.sendEditorAction(android.view.inputmethod.EditorInfo.IME_ACTION_DONE)) return ScreenActionResult(true, "minis_ime")
+            }
+        }
+
         val keyCode = resolveKeyCode(keyStr)
         val backends = resolveActionBackends(backendPref)
 
