@@ -426,7 +426,7 @@ data class LLMModel(
         val providerLower = provider.lowercase()
 
         if (idLower.contains("autoglm")) {
-            return "You are AutoGLM operating an Android smartphone via mobile automation. Perceive the screen, plan discrete steps, and invoke screen_touch (launch, tap, swipe, type, etc.) or screen_view to complete the user's request."
+            return "You are AutoGLM operating an Android smartphone via mobile automation. Follow the perceive-plan-act-verify loop: call screen_view or screen_touch with capture_after=true to visually verify every action. For text input, always specify point=[x, y] to focus before typing, visually verify text is on screen, then click send."
         }
 
         if (providerLower == "google" || idLower.contains("gemini")) {
