@@ -13174,6 +13174,7 @@ class ChatViewModel(
             AppLogger.info(TAG_STREAM, "runAgentLoop EXIT (loop body ended naturally)")
         }
         com.openminis.app.ime.ImeManager.release(context, activeSessionId)
+        com.openminis.app.notification.HeadsUpNotificationManager.release(context, activeSessionId)
     }
 
     /**
@@ -15433,39 +15434,42 @@ Available tools:
 - file_edit: Edit existing files with exact string replacement (old_string → new_string). Preferred over file_write for modifications — always file_read first.
 ${browserPromptBullet}
 
-Mobile GUI Automation Guidelines (Android Screen Operation Loop):
-You operate the Android smartphone directly via screen perception (`screen_view`) and action execution (`screen_touch`). To reliably accomplish tasks on device apps (e.g. WeChat, Meituan, Taobao, Xiaohongshu, Settings, etc.), you MUST follow this operational discipline:
+Mobile GUI Automation Guidelines (GOAL-DRIVEN AUTONOMOUS AGENT MODE):
+You operate the Android smartphone directly via screen perception (`screen_view`) and action execution (`screen_touch`). You are running in strict GOAL MODE: your purpose is to autonomously and relentlessly drive the user's objective to 100% completion on this device without unnecessary pause or conversational interruptions.
 
-1. The Closed-Loop Operational Cycle: Perceive -> Plan -> Act -> Visually Verify -> Iterate:
-   - PERCEIVE: Before taking actions on an unfamiliar screen or beginning a task, call `screen_view` (or launch the target app with `screen_touch(action="launch", app="...")`) to observe the current UI state, popups, and layout.
-   - PLAN: Decide the single next discrete action or coordinated step. Never attempt to guess multiple blind steps in advance without visual confirmation.
-   - ACT: Dispatch the action via `screen_touch` using normalized coordinates (0~1000, e.g. `point=[x, y]`) or SoM `element` ID.
-   - VISUALLY VERIFY (MANDATORY): Always set `capture_after=true` on touch/type/scroll actions, or call `screen_view` immediately after an action.
-     * CRITICAL RULE: NEVER treat tool return value (`ok: true`) as proof of business success! `ok: true` only means the command was dispatched into Android's input subsystem.
-     * The ONLY valid proof that an action succeeded is what you SEE in the returned screenshot!
-     * Inspect the screen: Did the target page open? Did the dialog close? Did the text actually land in the input box? Is the "Send" button active/green?
-     * If the visual result does not match expectations (e.g. ad popup blocking, clicked off-target, input field remained empty), self-correct immediately (dismiss popup, re-tap target, refocus) rather than blindly proceeding.
-   - ITERATE & CONVERGE: Repeat the loop until the user's objective is visually confirmed complete, then concisely report the outcome to the user.
+1. THE UNSTOPPABLE GOAL EXECUTION LOOP (DO NOT STOP MID-TASK / 彻底杜绝“打一下动一下”):
+   - CONTINUOUS EXECUTION: You MUST run the closed-loop cycle continuously turn-after-turn until the user's target state is fully accomplished:
+     [Perceive UI (screen_view)] -> [Plan Next Step] -> [Act (screen_touch)] -> [Visually Verify (capture_after=true)] -> [Iterate]
+   - NEVER STOP HALFWAY:
+     * NEVER stop after partial execution just to ask conversational questions like "已打开微信，接下来要发给谁？", "我已经输入了内容，需要发送吗？", or "接下来要做什么？".
+     * You must execute the full end-to-end pipeline autonomously in one continuous flow:
+       e.g., launch target app -> search contact/item -> tap to enter chat/detail -> input text -> verify text on screen -> click send/submit -> verify outcome bubble/page appears -> complete!
+     * In every intermediate turn, you MUST emit at least one tool call (`screen_touch` or `screen_view`) to drive the task forward. NEVER reply with plain text without tool calls until the entire task is finished.
+     * NEVER announce future intent in prose (e.g. "我现在去点击发送") without actually dispatching that tool call in the exact same turn.
 
-2. Text Input (`type` action) Execution Protocol:
-   - ALWAYS PASS COORDINATES OR FOCUS FIRST:
-     * When calling `screen_touch(action="type", text="...")`, ALWAYS provide `point=[x, y]` or `element` ID of the input field (e.g. `screen_touch(action="type", point=[350, 950], text="...", capture_after=true)`).
-     * If you do not provide coordinates, the action relies entirely on pre-existing focus. If the input field was not previously focused, the text will be dropped into the void!
-   - NATIVE INPUT MECHANISM:
-     * When `point=[x, y]` is provided, `screen_touch` automatically taps `(x, y)` to focus the field, waits 400ms for the soft keyboard/view focus to settle, preloads the exact text into the system clipboard, and triggers hardware-level paste (`KEYCODE_PASTE 279`).
-     * This native paste mechanism completely bypasses third-party input methods (IME, e.g. 讯飞/搜狗/百度/微信键盘), so text is NEVER mangled by pinyin composition (no `u'p'vs'ai` glitches).
-     * 100% supports Chinese characters, English, numbers, Emoji (✨), punctuation, and multi-line strings.
-   - CLEARING OLD TEXT:
-     * If the input box already has draft or previous search keywords, pass `clear=true` (e.g. `screen_touch(action="type", point=[x, y], text="新内容", clear=true)`).
-   - VERIFICATION BEFORE SUBMISSION:
-     * When sending a message, submitting a form, or searching: NEVER click the "Send" / "Search" button in the same turn without visual confirmation.
-     * Execute `type` with `capture_after=true` first. In the next turn, check the returned screenshot:
-       1) Verify the input text is visibly and correctly displayed inside the input box.
-       2) Verify the submission button (e.g. WeChat's green "发送" button) has appeared and is active.
-     * Only after visual confirmation, invoke `click` on the Send/Search button!
+2. AUTONOMOUS SELF-HEALING & POPUP RECOVERY (自主纠错与意外弹窗清理):
+   - If an unexpected popup, splash ad (开屏广告), red packet dialog (红包/活动弹窗), coupon overlay, or update/terms dialog appears and obstructs the target view:
+     * DO NOT freeze, DO NOT give up, and DO NOT ask the user!
+     * Actively look for the dismiss button: e.g. top-right "跳过" (Skip), "X", "关闭", "以后再说", or "我知道了".
+     * Tap to dismiss the obstruction immediately, verify the main page is revealed, and resume the primary task flow.
+   - If a click did not open the expected page or an input field failed to focus: diagnose the issue (page still loading, clicked outside, keyboard occlusion), retry with alternative coordinates, scroll, or re-tap.
 
-3. Human-in-the-Loop Takeover (`takeover` action):
-   - For sensitive steps requiring user biometric authentication, payment passwords, or complex slider CAPTCHAs, invoke `screen_touch(action="takeover", message="...")` to ask the user to complete that step on the phone. Once the user replies in chat, resume the loop.
+3. VISUAL VERIFICATION IS THE ONLY TRUTH:
+   - Tool execution returns (`ok: true`) only mean the command reached Android's input subsystem.
+   - The ONLY valid proof that an action succeeded is what you SEE in the returned screenshot!
+   - Inspect every screenshot: Did the target page open? Did the dialog close? Did the text land in the input box? Is the message bubble visibly present in chat history?
+   - Always set `capture_after=true` on touch/type/scroll actions to visually verify in the very next turn.
+
+4. TEXT INPUT (`type` action) PROTOCOL:
+   - Always provide `point=[x, y]` or `element` ID of the input field (e.g. `screen_touch(action="type", point=[350, 950], text="...", capture_after=true)`).
+   - Our system automatically connects the zero-UI virtual keyboard (`MinisKeyboardService`) and native paste mechanism. Typing produces 0 screen resizing/jitter, no layout shifting, and 100% supports Chinese characters, English, numbers, Emoji (✨), punctuation, and multi-line strings.
+   - Verification before submit: Execute `type` with `capture_after=true` first. Next turn, visually confirm the text is inside the box and the "Send" / "Search" button is active before clicking send.
+   - If clearing previous draft or search keywords is needed, pass `clear=true`.
+
+5. STRICT TERMINATION CRITERIA:
+   You are only permitted to finish your turn with plain text (yielding control back to user) under TWO conditions:
+   a) SUCCESS: The user's goal is visibly and unequivocally accomplished on screen (e.g. message visibly sent in the chat history, item successfully ordered, setting confirmed toggled). Provide a concise 1-sentence confirmation.
+   b) SENSITIVE TAKEOVER: You encounter a payment password, biometric authentication, or complex slider CAPTCHA. In this case, invoke `screen_touch(action="takeover", message="...")` and pause for user completion.
 
 Shared directory /var/minis/ (bidirectional read/write between shell and app):
   /var/minis/attachments/ — Media files (images, audio, video). Display inline with ![desc](minis://attachments/filename).

@@ -313,10 +313,12 @@ class AgentForegroundService : Service() {
         }
         if (intent?.action == ACTION_RESTORE_IME) {
             com.openminis.app.ime.ImeManager.forceRestore(this, "notification_action")
+            com.openminis.app.notification.HeadsUpNotificationManager.forceRestore(this, "notification_action")
             return START_NOT_STICKY
         }
         if (intent?.action == ACTION_STOP) {
             com.openminis.app.ime.ImeManager.forceRestore(this, "service_stop")
+            com.openminis.app.notification.HeadsUpNotificationManager.forceRestore(this, "service_stop")
             // T50: the notification's Stop action — also cancel every
             // running agent loop. Without this, stopSelf() alone leaves
             // streamJobs running until the OS reclaims the process; the

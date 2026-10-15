@@ -212,6 +212,7 @@ object ScreenTool {
         val (screenW, screenH) = getDisplayBounds(context)
         sessionId?.let { sid ->
             com.openminis.app.ime.ImeManager.acquire(context, sid)
+            com.openminis.app.notification.HeadsUpNotificationManager.acquire(context, sid)
         }
 
         return when (action) {
