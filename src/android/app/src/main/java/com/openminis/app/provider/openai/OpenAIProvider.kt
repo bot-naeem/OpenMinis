@@ -2486,6 +2486,7 @@ class OpenAIProvider private constructor(
                                 }
                             }
                             for (carrier in imageCarriers) messagesArray.put(carrier)
+                        }
                         // T132: emit text + image_url parts as a structured user
                         // message. The previous structured-contentParts branch
                         // dropped AgentContentPart.ImageData entirely — only the
