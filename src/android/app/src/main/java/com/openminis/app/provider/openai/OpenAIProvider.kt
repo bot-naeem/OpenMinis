@@ -3,6 +3,8 @@ package com.openminis.app.provider.openai
 import android.util.Base64
 import com.openminis.app.data.model.AgentContentPart
 import com.openminis.app.data.model.AgentToolDefinition
+import com.openminis.app.provider.autoglm.AutoGLMAdapter
+import com.openminis.app.provider.autoglm.AutoGLMActionResult
 import com.openminis.app.data.model.LLMError
 import com.openminis.app.data.model.LLMMediaAttachment
 import com.openminis.app.data.model.LLMMessage
@@ -1076,6 +1078,8 @@ class OpenAIProvider private constructor(
         // heuristic only armed extraction for DashScope/qwen ids, which meant
         // MiniMax M3 relied on the mid-stream `text.contains("<think>")` fallback).
         val thinkParser = ThinkPrefixStreamParser()
+        val isAutoGlm = AutoGLMAdapter.isAutoGlm(model.id)
+        val autoGlmAccum = if (isAutoGlm) StringBuilder() else null
 
         // T321: turn-level SSE counters for empty-response triage.
         var sseEventCount = 0
@@ -1541,12 +1545,15 @@ class OpenAIProvider private constructor(
                         // every such body began with a blank line.
                         delta?.safeOptString("content", "")?.let { text ->
                             if (text.isNotEmpty()) {
+                                if (isAutoGlm) autoGlmAccum?.append(text)
                                 val out = thinkParser.feed(text)
                                 if (out.thinking.isNotEmpty()) {
                                     reasoningAccum.append(out.thinking)
                                     send(LLMStreamChunk.ThinkingDelta(out.thinking))
                                 }
-                                if (out.visible.isNotEmpty()) send(LLMStreamChunk.Text(out.visible))
+                                if (out.visible.isNotEmpty() && !isAutoGlm) {
+                                    send(LLMStreamChunk.Text(out.visible))
+                                }
                             }
                         }
 
@@ -1615,7 +1622,46 @@ class OpenAIProvider private constructor(
                     reasoningAccum.append(fin.thinking)
                     send(LLMStreamChunk.ThinkingDelta(fin.thinking))
                 }
-                if (fin.visible.isNotEmpty()) send(LLMStreamChunk.Text(fin.visible))
+                if (fin.visible.isNotEmpty() && !isAutoGlm) {
+                    send(LLMStreamChunk.Text(fin.visible))
+                }
+            }
+
+            // [AutoGLM-Phone] Synthesize screen_touch tool call from DSL action output
+            if (isAutoGlm && autoGlmAccum != null && autoGlmAccum.isNotEmpty()) {
+                val fullText = autoGlmAccum.toString()
+                when (val parsed = AutoGLMAdapter.parseAction(fullText)) {
+                    is AutoGLMActionResult.Execute -> {
+                        val callId = "call_${System.currentTimeMillis()}"
+                        val toolArgs = parsed.toScreenTouchArgs()
+                        android.util.Log.d(
+                            "ToolChain[Provider]",
+                            "→ AutoGLM ToolCallComplete id=$callId name=${com.openminis.app.tools.ToolNames.SCREEN_TOUCH} args=${toolArgs.toString().take(300)}"
+                        )
+                        if (parsed.reasoning.isNotEmpty()) {
+                            send(LLMStreamChunk.Text(parsed.reasoning))
+                        }
+                        send(LLMStreamChunk.ToolUseStart(callId, com.openminis.app.tools.ToolNames.SCREEN_TOUCH))
+                        send(LLMStreamChunk.ToolCallComplete(callId, com.openminis.app.tools.ToolNames.SCREEN_TOUCH, toolArgs))
+                    }
+                    is AutoGLMActionResult.Finish -> {
+                        android.util.Log.d("ToolChain[Provider]", "→ AutoGLM Task Finish: ${parsed.message}")
+                        val reply = if (parsed.reasoning.isNotEmpty()) {
+                            "${parsed.reasoning}\n\n${parsed.message}"
+                        } else {
+                            parsed.message
+                        }
+                        if (reply.isNotEmpty()) {
+                            send(LLMStreamChunk.Text(reply))
+                        }
+                    }
+                    is AutoGLMActionResult.None -> {
+                        val cleaned = AutoGLMAdapter.cleanReasoningText(fullText)
+                        if (cleaned.isNotEmpty()) {
+                            send(LLMStreamChunk.Text(cleaned))
+                        }
+                    }
+                }
             }
 
             // Emit ToolCallComplete for all accumulated tool calls
@@ -2238,7 +2284,8 @@ class OpenAIProvider private constructor(
         }
 
         // Tools
-        if (tools.isNotEmpty()) {
+        val isAutoGlm = AutoGLMAdapter.isAutoGlm(model.id)
+        if (tools.isNotEmpty() && !isAutoGlm) {
             val toolsArray = JSONArray()
             for (tool in tools) {
                 toolsArray.put(tool.toOpenAIJson())
@@ -2301,48 +2348,54 @@ class OpenAIProvider private constructor(
                     msg.role == LLMMessage.Role.ASSISTANT -> {
                         val obj = JSONObject()
                         obj.put("role", "assistant")
-                        if (echoReasoning) {
-                            val rc = msg.reasoningContent
-                            if (rc != null) {
-                                // Round-trip exactly what the server emitted,
-                                // including empty strings. DeepSeek V4 emits
-                                // `reasoning_content: ""` on non-thinking turns
-                                // and accepts the same shape on input — the empty
-                                // value is the field-presence guarantee that
-                                // prevents 400s once thinking is on.
-                                obj.put("reasoning_content", rc)
-                            } else if (placeholderAllowed) {
-                                // No captured reasoning for this turn (e.g. fallback
-                                // to a non-thinking model, or message persisted before
-                                // thinking was enabled). Send "" rather than a synthetic
-                                // marker: prior placeholders ("[no prior reasoning]",
-                                // T249; single space, T257) were in-context-learned by
-                                // DeepSeek V4 and echoed back as the model's own
-                                // reasoning. Empty string satisfies the field-presence
-                                // check with no learnable pattern.
-                                obj.put("reasoning_content", "")
+                        if (isAutoGlm) {
+                            val toolUseParts = msg.contentParts.filterIsInstance<AgentContentPart.ToolUse>()
+                            val textParts = msg.contentParts.filterIsInstance<AgentContentPart.Text>()
+                            val contentSb = StringBuilder()
+                            if (textParts.isNotEmpty()) {
+                                contentSb.append(textParts.joinToString("") { it.text })
                             }
-                        }
-                        val textParts = msg.contentParts.filterIsInstance<AgentContentPart.Text>()
-                        if (textParts.isNotEmpty()) {
-                            obj.put("content", textParts.joinToString("") { it.text })
-                        }
-                        val toolUseParts = msg.contentParts.filterIsInstance<AgentContentPart.ToolUse>()
-                        if (toolUseParts.isNotEmpty()) {
-                            val toolCallsArr = JSONArray()
                             for (tu in toolUseParts) {
-                                toolCallsArr.put(JSONObject().apply {
-                                    put("id", capChatToolCallId(tu.id))
-                                    put("type", "function")
-                                    put("function", JSONObject().apply {
-                                        put("name", tu.name)
-                                        put("arguments", tu.input.toString())
-                                    })
-                                })
+                                val dsl = AutoGLMAdapter.formatToAutoGLM(tu.input)
+                                if (dsl.isNotEmpty()) {
+                                    if (contentSb.isNotEmpty() && !contentSb.endsWith("\n")) {
+                                        contentSb.append("\n")
+                                    }
+                                    contentSb.append(dsl)
+                                }
                             }
-                            obj.put("tool_calls", toolCallsArr)
+                            obj.put("content", if (contentSb.isNotEmpty()) contentSb.toString() else msg.content)
+                            messagesArray.put(obj)
+                        } else {
+                            if (echoReasoning) {
+                                val rc = msg.reasoningContent
+                                if (rc != null) {
+                                    obj.put("reasoning_content", rc)
+                                } else if (placeholderAllowed) {
+                                    obj.put("reasoning_content", "")
+                                }
+                            }
+                            val textParts = msg.contentParts.filterIsInstance<AgentContentPart.Text>()
+                            if (textParts.isNotEmpty()) {
+                                obj.put("content", textParts.joinToString("") { it.text })
+                            }
+                            val toolUseParts = msg.contentParts.filterIsInstance<AgentContentPart.ToolUse>()
+                            if (toolUseParts.isNotEmpty()) {
+                                val toolCallsArr = JSONArray()
+                                for (tu in toolUseParts) {
+                                    toolCallsArr.put(JSONObject().apply {
+                                        put("id", capChatToolCallId(tu.id))
+                                        put("type", "function")
+                                        put("function", JSONObject().apply {
+                                            put("name", tu.name)
+                                            put("arguments", tu.input.toString())
+                                        })
+                                    })
+                                }
+                                obj.put("tool_calls", toolCallsArr)
+                            }
+                            messagesArray.put(obj)
                         }
-                        messagesArray.put(obj)
                     }
                     // User with tool_results → emit separate tool messages
                     msg.role == LLMMessage.Role.USER -> {
@@ -2350,96 +2403,89 @@ class OpenAIProvider private constructor(
                         val textParts = msg.contentParts.filterIsInstance<AgentContentPart.Text>()
                         val imageParts = msg.contentParts.filterIsInstance<AgentContentPart.ImageData>()
 
-                        // [T-android-parallel-toolresult-image-split] Every
-                        // `tool` reply first, image carriers AFTER the whole run.
-                        //
-                        // THE reported bug. This used to emit, per result,
-                        // `tool` immediately followed by that result's image
-                        // carrier `user` message. With ONE tool call the carrier
-                        // lands after the only `tool` message and nothing is
-                        // split, which is why the single-image case always
-                        // worked. With TWO parallel calls it lands BETWEEN them:
-                        //
-                        //   assistant  tool_calls:[call_01, call_02]
-                        //   tool       call_01
-                        //   user       [Image returned by read_image]   <-- splits the run
-                        //   tool       call_02
-                        //
-                        // OpenAI-compatible endpoints require the `tool` replies
-                        // answering an assistant's tool_calls to follow it
-                        // CONTIGUOUSLY. The interposed user message ends the run,
-                        // so call_02 is seen as unanswered and DeepSeek rejects
-                        // the request with `[400] No tool output found for tool
-                        // call call_…`. Providers differ only in strictness —
-                        // GLM tolerates the same body, which is why one model
-                        // worked and the other did not; the request was
-                        // malformed either way.
-                        //
-                        // Collect the carriers and append them after the loop so
-                        // the tool run stays unbroken, no matter how many calls
-                        // were made in parallel.
-                        val imageCarriers = mutableListOf<JSONObject>()
-                        for (tr in toolResults) {
-                            messagesArray.put(JSONObject().apply {
-                                put("role", "tool")
-                                put("tool_call_id", capChatToolCallId(tr.id))
-                                put("content", tr.content)
-                            })
-                            // [T-android-toolresult-image-dropped] THE reported bug.
-                            // read_image hands its pixels back on the ToolResult
-                            // (ChatViewModel sets imageData on the part), but this
-                            // loop only ever emitted `content`, so on a native-vision
-                            // model the bytes were dropped at the provider boundary
-                            // and the model answered "I can't actually see pixels" —
-                            // with a green, successful-looking tool card above it.
-                            //
-                            // Chat Completions has no image block inside a `tool`
-                            // message (the schema takes a plain string), so the
-                            // pixels ride on a following USER message that references
-                            // the call. Anthropic can nest the image directly in its
-                            // tool_result and does (AnthropicProvider ~L600); this is
-                            // the same intent expressed in the shape this API allows.
-                            val trBytes = tr.imageData
-                            if (trBytes != null && trBytes.isNotEmpty() && supportsImages) {
-                                // [T-android-image-upload-format] Accepted format +
-                                // MIME taken from the bytes that go out.
-                                val upload = com.openminis.app.provider.ImageBudget
-                                    .prepareForUpload(trBytes, tr.imageMimeType)
-                                imageCarriers.add(JSONObject().apply {
-                                    put("role", "user")
-                                    put("content", JSONArray().apply {
-                                        put(JSONObject().apply {
-                                            put("type", "text")
-                                            // Name the call, not just the tool.
-                                            // Two parallel read_image results
-                                            // both said "[Image returned by
-                                            // read_image]", so once the carriers
-                                            // are grouped after the run the model
-                                            // had nothing to tell them apart by.
-                                            put(
-                                                "text",
-                                                "[Image returned by ${tr.name} " +
-                                                    "(tool_call_id: ${capChatToolCallId(tr.id)})]",
-                                            )
-                                        })
-                                        put(
-                                            if (upload != null) JSONObject().apply {
-                                                put("type", "image_url")
-                                                put("image_url", JSONObject().apply {
-                                                    put("url", upload.dataUrl())
-                                                })
-                                            } else JSONObject().apply {
-                                                put("type", "text")
-                                                put("text", com.openminis.app.provider.ImageBudget.UNSENDABLE_IMAGE_PLACEHOLDER)
-                                            },
-                                        )
+                        if (isAutoGlm && toolResults.isNotEmpty()) {
+                            // [AutoGLM-Phone] Multi-turn continues as a user turn carrying the fresh screenshot
+                            val contentArr = JSONArray()
+                            for (tp in textParts) {
+                                if (tp.text.isNotEmpty()) {
+                                    contentArr.put(JSONObject().apply {
+                                        put("type", "text")
+                                        put("text", tp.text)
                                     })
+                                }
+                            }
+                            for (img in imageParts) {
+                                if (supportsImages) {
+                                    val upload = com.openminis.app.provider.ImageBudget.prepareForUpload(img.data, img.mimeType)
+                                    if (upload != null) {
+                                        contentArr.put(JSONObject().apply {
+                                            put("type", "image_url")
+                                            put("image_url", JSONObject().apply {
+                                                put("url", upload.dataUrl())
+                                            })
+                                        })
+                                    }
+                                }
+                            }
+                            for (tr in toolResults) {
+                                val trBytes = tr.imageData
+                                if (trBytes != null && trBytes.isNotEmpty() && supportsImages) {
+                                    val upload = com.openminis.app.provider.ImageBudget.prepareForUpload(trBytes, tr.imageMimeType)
+                                    if (upload != null) {
+                                        contentArr.put(JSONObject().apply {
+                                            put("type", "image_url")
+                                            put("image_url", JSONObject().apply {
+                                                put("url", upload.dataUrl())
+                                            })
+                                        })
+                                    }
+                                }
+                            }
+                            if (contentArr.length() > 0) {
+                                messagesArray.put(JSONObject().apply {
+                                    put("role", "user")
+                                    put("content", contentArr)
                                 })
                             }
-                        }
-                        // Carriers go here — after EVERY `tool` reply, so the run
-                        // answering the assistant's tool_calls is contiguous.
-                        for (carrier in imageCarriers) messagesArray.put(carrier)
+                        } else {
+                            val imageCarriers = mutableListOf<JSONObject>()
+                            for (tr in toolResults) {
+                                messagesArray.put(JSONObject().apply {
+                                    put("role", "tool")
+                                    put("tool_call_id", capChatToolCallId(tr.id))
+                                    put("content", tr.content)
+                                })
+                                val trBytes = tr.imageData
+                                if (trBytes != null && trBytes.isNotEmpty() && supportsImages) {
+                                    val upload = com.openminis.app.provider.ImageBudget
+                                        .prepareForUpload(trBytes, tr.imageMimeType)
+                                    imageCarriers.add(JSONObject().apply {
+                                        put("role", "user")
+                                        put("content", JSONArray().apply {
+                                            put(JSONObject().apply {
+                                                put("type", "text")
+                                                put(
+                                                    "text",
+                                                    "[Image returned by ${tr.name} " +
+                                                        "(tool_call_id: ${capChatToolCallId(tr.id)})]",
+                                                )
+                                            })
+                                            put(
+                                                if (upload != null) JSONObject().apply {
+                                                    put("type", "image_url")
+                                                    put("image_url", JSONObject().apply {
+                                                        put("url", upload.dataUrl())
+                                                    })
+                                                } else JSONObject().apply {
+                                                    put("type", "text")
+                                                    put("text", com.openminis.app.provider.ImageBudget.UNSENDABLE_IMAGE_PLACEHOLDER)
+                                                },
+                                            )
+                                        })
+                                    })
+                                }
+                            }
+                            for (carrier in imageCarriers) messagesArray.put(carrier)
                         // T132: emit text + image_url parts as a structured user
                         // message. The previous structured-contentParts branch
                         // dropped AgentContentPart.ImageData entirely — only the

@@ -7246,6 +7246,9 @@ class ChatViewModel(
      * The rest of the prompt is not model-specific on Android.
      */
     private fun systemPromptFor(provider: LLMProvider, prompt: String?): String? {
+        if (com.openminis.app.provider.autoglm.AutoGLMAdapter.isAutoGlm(provider.model.id)) {
+            return com.openminis.app.provider.autoglm.AutoGLMAdapter.buildSystemPrompt()
+        }
         val oauth = (provider as? com.openminis.app.provider.anthropic.AnthropicProvider)?.isOAuth == true
         if (!oauth || prompt == null) return prompt
         val prefix = com.openminis.app.auth.ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT
@@ -10658,7 +10661,11 @@ class ChatViewModel(
         // [T-android-switch-model-next-request] The prompt this loop sends. A
         // var only for the mid-turn switch: the Claude Code OAuth prefix is
         // the one provider-specific part of it.
-        var loopSystemPrompt = systemPrompt
+        var loopSystemPrompt = if (com.openminis.app.provider.autoglm.AutoGLMAdapter.isAutoGlm(provider.model.id)) {
+            com.openminis.app.provider.autoglm.AutoGLMAdapter.buildSystemPrompt()
+        } else {
+            systemPrompt
+        }
         // A flag left over from a turn that ended before it could be applied
         // is stale once this turn starts on the class-level provider; a switch
         // made after the caller captured `provider` (the class-level provider
@@ -10830,6 +10837,36 @@ class ChatViewModel(
             }
             // Sanitize history before each API call (mirrors iOS pre-API validation)
             sanitizeAgentHistory()
+
+            // [AutoGLM-Phone] Initial screen auto-perception if user did not attach an image
+            if (turn == 0 && com.openminis.app.provider.autoglm.AutoGLMAdapter.isAutoGlm(currentProvider.model.id)) {
+                val lastUser = agentHistory.lastOrNull { it.role == LLMMessage.Role.USER }
+                val hasImage = lastUser?.contentParts?.any { it is AgentContentPart.ImageData } == true ||
+                    lastUser?.imageParts?.isNotEmpty() == true
+                if (!hasImage && com.openminis.app.tools.AgentToolSwitch.SCREEN.isEnabled(context)) {
+                    try {
+                        val capResult = com.openminis.app.tools.ScreenTool.executeView(
+                            """{"som":false,"tool_title":"Screen Perception"}""",
+                            activeSessionId,
+                            context
+                        )
+                        if (capResult.imageData != null && lastUser != null) {
+                            val updatedParts = lastUser.contentParts.toMutableList()
+                            updatedParts.add(AgentContentPart.ImageData(
+                                data = capResult.imageData,
+                                mimeType = capResult.imageMimeType ?: "image/jpeg",
+                                linuxPath = capResult.imageLinuxPath,
+                            ))
+                            val userIdx = agentHistory.lastIndexOf(lastUser)
+                            if (userIdx >= 0) {
+                                agentHistory[userIdx] = lastUser.copy(contentParts = updatedParts)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        AppLogger.warning(TAG_STREAM, "AutoGLM initial screen capture failed: ${e.message}")
+                    }
+                }
+            }
             // [T-agent-wrapup-turn] A helper that reaches its last permitted
             // round (or whose budget the parent has called time on) must not
             // end on a tool call: the parent only ever receives the child's
@@ -12218,7 +12255,20 @@ class ChatViewModel(
             // turn boundary. After this point everything is plain String
             // semantics — `turnText` participates in cross-turn accumulation
             // and gets persisted into agentHistory below.
-            val turnText = turnTextSb.toString()
+            val rawTurnText = turnTextSb.toString()
+            val turnText = if (com.openminis.app.provider.autoglm.AutoGLMAdapter.isAutoGlm(currentProvider.model.id)) {
+                val cleaned = com.openminis.app.provider.autoglm.AutoGLMAdapter.cleanReasoningText(rawTurnText)
+                if (cleaned != rawTurnText) {
+                    turnTextSb.setLength(0)
+                    turnTextSb.append(cleaned)
+                    withContext(Dispatchers.Main) {
+                        updateAssistantMessage(assistantId, accumulatedText + cleaned, true, allToolBlocks)
+                    }
+                }
+                cleaned
+            } else {
+                rawTurnText
+            }
             // Accumulate text across turns
             accumulatedText += turnText
 
@@ -15186,6 +15236,10 @@ class ChatViewModel(
     }
 
     private fun buildSystemPrompt(): String? {
+        val activeModelId = currentModel?.id ?: currentProvider?.model?.id
+        if (com.openminis.app.provider.autoglm.AutoGLMAdapter.isAutoGlm(activeModelId)) {
+            return com.openminis.app.provider.autoglm.AutoGLMAdapter.buildSystemPrompt()
+        }
         // Cache-friendly layout: keep `base` byte-stable by stripping out anything
         // that varies per request, then append a "Runtime context" suffix at the
         // very end with all the dynamic bits (date, timezone, locale, configured
