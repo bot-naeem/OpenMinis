@@ -319,6 +319,7 @@ class AgentForegroundService : Service() {
         if (intent?.action == ACTION_STOP) {
             com.openminis.app.ime.ImeManager.forceRestore(this, "service_stop")
             com.openminis.app.notification.HeadsUpNotificationManager.forceRestore(this, "service_stop")
+            com.openminis.app.ui.aurora.AuroraGlowManager.forceRestore(this, "service_stop")
             // T50: the notification's Stop action — also cancel every
             // running agent loop. Without this, stopSelf() alone leaves
             // streamJobs running until the OS reclaims the process; the
@@ -559,6 +560,16 @@ class AgentForegroundService : Service() {
     )
 
     private fun applyOverlayState(state: OverlayState) {
+        // [DECOMMISSIONED]: The old floating tool-status capsule has been taken offline
+        // per user directive, superseded by the non-intrusive Aurora Edge Glow and Shutter Blink.
+        if (ToolOverlayController.DECOMMISSIONED) {
+            hideOverlay()
+            lingerJob?.cancel()
+            lingerJob = null
+            hasCompletionPending = false
+            SessionActivityTracker.setOverlayCompletionPending(false)
+            return
+        }
         val controller = overlayController ?: return
         val hasPerm = controller.hasOverlayPermission()
 

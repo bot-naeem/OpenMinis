@@ -13175,6 +13175,7 @@ class ChatViewModel(
         }
         com.openminis.app.ime.ImeManager.release(context, activeSessionId)
         com.openminis.app.notification.HeadsUpNotificationManager.release(context, activeSessionId)
+        com.openminis.app.ui.aurora.AuroraGlowManager.release(context, activeSessionId)
     }
 
     /**

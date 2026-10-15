@@ -90,7 +90,6 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
     val app = context.applicationContext as MinisApp
     val backgroundRepo = app.backgroundSettingsRepository
     val taskNotificationsEnabled by backgroundRepo.taskNotificationsEnabled.collectAsState()
-    val backgroundOverlayEnabled by backgroundRepo.backgroundOverlayEnabled.collectAsState()
     // [T-android-dynamic-island] Live-Updates toggle + device capability.
     val dynamicIslandEnabled by backgroundRepo.dynamicIslandEnabled.collectAsState()
 
@@ -174,55 +173,7 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
             // the system "Display over other apps" screen; canDrawOverlays
             // is re-polled on ON_RESUME so flipping the system grant
             // immediately makes the UI reflect ready-to-use state.
-            Spacer(Modifier.size(8.dp))
-            BgToggleRow(
-                icon = Icons.Outlined.Layers,
-                iconColor = Color(0xFF5856D6),
-                title = stringResource(R.string.settings_bg_overlay),
-                // [T-android-overlay-toggle-reflects-intent] Reflect the user's
-                // PERSISTED intent, not the derived ready-state. Previously this
-                // was `backgroundOverlayEnabled && canDrawOverlays`, so a user
-                // who tapped ON but never granted SYSTEM_ALERT_WINDOW (or later
-                // had it revoked) came back to a switch that read OFF — they
-                // concluded the toggle "won't stay on" and never connected it to
-                // the missing permission, so the overlay silently never showed.
-                // Showing ON here surfaces the real state: the switch is on, and
-                // the footer below says a permission is still needed, which is
-                // the actionable signal. canDrawOverlays still gates whether the
-                // overlay actually renders (AgentForegroundService checks the
-                // grant independently and posts a permission nudge).
-                checked = backgroundOverlayEnabled,
-                onCheckedChange = { wanted ->
-                    if (wanted && !canDrawOverlays) {
-                        try {
-                            val intent = Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:" + context.packageName),
-                            ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-                            context.startActivity(intent)
-                        } catch (_: Throwable) {
-                            // Fallback: open generic overlay settings screen.
-                            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
-                                .apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-                            try { context.startActivity(intent) } catch (_: Throwable) {}
-                        }
-                        // Persist the user's intent so when they return
-                        // with the grant in place, the overlay turns on
-                        // immediately (canDrawOverlays re-polls on
-                        // ON_RESUME — see LaunchedEffect above).
-                        backgroundRepo.setBackgroundOverlayEnabled(true)
-                    } else {
-                        backgroundRepo.setBackgroundOverlayEnabled(wanted)
-                    }
-                },
-            )
-            BgFooter(
-                if (!canDrawOverlays && backgroundOverlayEnabled) {
-                    stringResource(R.string.settings_bg_overlay_permission_needed)
-                } else {
-                    stringResource(R.string.settings_bg_overlay_footer)
-                },
-            )
+
 
             // [T-android-dynamic-island] Live Updates / "dynamic island" toggle.
             // Only interactive when the device is capable (Android 16+ with the

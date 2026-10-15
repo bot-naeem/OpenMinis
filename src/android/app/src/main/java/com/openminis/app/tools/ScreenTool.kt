@@ -213,6 +213,7 @@ object ScreenTool {
         sessionId?.let { sid ->
             com.openminis.app.ime.ImeManager.acquire(context, sid)
             com.openminis.app.notification.HeadsUpNotificationManager.acquire(context, sid)
+            com.openminis.app.ui.aurora.AuroraGlowManager.acquire(context, sid)
         }
 
         return when (action) {
@@ -786,6 +787,15 @@ object ScreenTool {
     }
 
     private fun captureRawBitmap(context: Context, backendPref: String): ScreenCaptureResult {
+        com.openminis.app.ui.aurora.AuroraGlowManager.hideForShutter()
+        try {
+            return captureRawBitmapInternal(context, backendPref)
+        } finally {
+            com.openminis.app.ui.aurora.AuroraGlowManager.restoreAfterShutter()
+        }
+    }
+
+    private fun captureRawBitmapInternal(context: Context, backendPref: String): ScreenCaptureResult {
         val backendsToTry = when (backendPref) {
             "a11y" -> listOf("a11y")
             "root" -> listOf("root")

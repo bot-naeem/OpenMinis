@@ -69,6 +69,7 @@ class ToolOverlayController(private val context: Context) {
 
     companion object {
         private const val TAG = "ToolOverlayController"
+        const val DECOMMISSIONED = true
         private const val DRAG_SLOP_DP = 8f
         private const val LOGO_SIZE_DP = 26
         // [T-android-overlay-ring-tight] Ring view matches the logo
@@ -362,6 +363,10 @@ class ToolOverlayController(private val context: Context) {
     }
 
     private fun attach() {
+        if (DECOMMISSIONED) {
+            isShown = false
+            return
+        }
         val container = buildView()
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY

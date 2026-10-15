@@ -305,6 +305,7 @@ class MinisApp : Application(), ImageLoaderFactory {
         // Check if an original IME was left un-restored due to an abnormal process death
         com.openminis.app.ime.ImeManager.checkCrashRecovery(this)
         com.openminis.app.notification.HeadsUpNotificationManager.checkCrashRecovery(this)
+        com.openminis.app.ui.aurora.AuroraGlowManager.checkCrashRecovery(this)
 
         // T283: install NDK signal handler for native crashes (SIGSEGV/
         // SIGABRT/SIGBUS/SIGFPE/SIGILL/SIGSYS). Writes a one-shot text
