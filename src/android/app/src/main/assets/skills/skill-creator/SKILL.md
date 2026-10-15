@@ -1,18 +1,18 @@
 ---
 name: skill-creator
-version: 2.0.0
-description: Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends Claude's capabilities with specialized knowledge, workflows, or tool integrations.
+version: 2.1.0
+description: Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends the Agent's capabilities with specialized knowledge, workflows, or tool integrations.
 ---
 
 # Skill Creator
 
-This skill provides guidance for creating effective skills.
+This skill provides guidance for creating effective skills in Minis.
 
 ## About Skills
 
-Skills are modular, self-contained packages that extend Claude's capabilities by providing
+Skills are modular, self-contained packages that extend the Agent's capabilities by providing
 specialized knowledge, workflows, and tools. Think of them as "onboarding guides" for specific
-domains or tasks—they transform Claude from a general-purpose agent into a specialized agent
+domains or tasks—they transform the general-purpose assistant into a specialized agent
 equipped with procedural knowledge that no model can fully possess.
 
 ### What Skills Provide
@@ -26,9 +26,9 @@ equipped with procedural knowledge that no model can fully possess.
 
 ### Concise is Key
 
-The context window is a public good. Skills share the context window with everything else Claude needs: system prompt, conversation history, other Skills' metadata, and the actual user request.
+The context window is a public good. Skills share the context window with everything else the Agent needs: system prompt, conversation history, other Skills' metadata, and the actual user request.
 
-**Default assumption: Claude is already very smart.** Only add context Claude doesn't already have. Challenge each piece of information: "Does Claude really need this explanation?" and "Does this paragraph justify its token cost?"
+**Default assumption: The AI model is already very smart.** Only add context the model doesn't already have. Challenge each piece of information: "Does the Agent really need this explanation?" and "Does this paragraph justify its token cost?"
 
 Prefer concise examples over verbose explanations.
 
@@ -83,7 +83,7 @@ Skills use three loading levels:
 
 - Use imperative/infinitive form
 - `description` field should include all "when to use" triggers (body is loaded after triggering)
-- Only add context Claude doesn't already have
+- Only add context the Agent doesn't already have
 - Prefer concise examples over verbose explanations
 - Keep essential workflow in SKILL.md; move detailed reference material to separate files
 
