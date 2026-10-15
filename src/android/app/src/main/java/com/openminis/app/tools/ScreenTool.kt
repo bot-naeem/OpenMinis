@@ -233,7 +233,7 @@ object ScreenTool {
 
                 val details = JSONObject().apply {
                     put("app", appTarget)
-                    put("resolved_package", actRes.message)
+                    put("resolved_package", actRes.resolvedPackage)
                     put("backend", actRes.backend)
                     put("settle_ms", waitSettle)
                 }
@@ -398,7 +398,7 @@ object ScreenTool {
                     put("backend", actRes.backend)
                     put("settle_ms", settleMs)
                     if (targetCoords != null) {
-                        put("tapped_point", JSONArray().put(targetCoords.rawX).put(targetCoords.rawY))
+                        put("tapped_point", JSONArray().put(targetCoords.normX).put(targetCoords.normY))
                     } else {
                         put("hint", "Typed into currently focused field. If target field was not focused, provide point=[x, y] to focus before typing.")
                     }
@@ -858,6 +858,10 @@ object ScreenTool {
         val success: Boolean,
         val backend: String,
         val errorMessage: String? = null,
+        // `performLaunch` resolves an app name to a package before dispatching.
+        // That package is a result, not an error, so it gets its own slot rather
+        // than riding in errorMessage where toErrorJson would report it as a failure.
+        val resolvedPackage: String? = null,
     ) {
         fun toErrorJson(): JSONObject = JSONObject().apply {
             put("ok", false)
@@ -1304,11 +1308,11 @@ object ScreenTool {
             when (b) {
                 "root" -> if (RootAccess.isRootGranted()) {
                     val res = RootAccess.runSu("monkey -p $pkg -c android.intent.category.LAUNCHER 1", 5000L)
-                    if (res?.exitCode == 0) return ScreenActionResult(true, "root", pkg)
+                    if (res?.exitCode == 0) return ScreenActionResult(true, "root", resolvedPackage = pkg)
                 }
                 "shizuku" -> if (ShizukuManager.isReady()) {
                     val res = ShizukuManager.runProcess(arrayOf("monkey", "-p", pkg, "-c", "android.intent.category.LAUNCHER", "1"))
-                    if (res.exitCode == 0) return ScreenActionResult(true, "shizuku", pkg)
+                    if (res.exitCode == 0) return ScreenActionResult(true, "shizuku", resolvedPackage = pkg)
                 }
                 "a11y" -> {
                     try {
@@ -1316,7 +1320,7 @@ object ScreenTool {
                         if (intent != null) {
                             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
                             context.startActivity(intent)
-                            return ScreenActionResult(true, "a11y", pkg)
+                            return ScreenActionResult(true, "a11y", resolvedPackage = pkg)
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "failed to launch intent for $pkg via a11y context", e)
@@ -1331,7 +1335,7 @@ object ScreenTool {
             if (intent != null) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
                 context.startActivity(intent)
-                return ScreenActionResult(true, "framework", pkg)
+                return ScreenActionResult(true, "framework", resolvedPackage = pkg)
             }
         } catch (e: Exception) {
             return ScreenActionResult(false, "none", "Failed to launch package '$pkg': ${e.message}")
