@@ -842,7 +842,25 @@ object ScreenTool {
         }
     }
 
+    @Volatile
+    private var latestAssistantScreenshot: Bitmap? = null
+
+    fun setLastSystemScreenshot(bitmap: Bitmap?) {
+        latestAssistantScreenshot = bitmap
+    }
+
+    fun consumeLastSystemScreenshot(): Bitmap? {
+        val b = latestAssistantScreenshot
+        latestAssistantScreenshot = null
+        return b
+    }
+
     private fun captureRawBitmapInternal(context: Context, backendPref: String): ScreenCaptureResult {
+        val directShot = consumeLastSystemScreenshot()
+        if (directShot != null && backendPref == "auto") {
+            return ScreenCaptureResult(directShot, "system_assistant")
+        }
+
         val backendsToTry = when (backendPref) {
             "a11y" -> listOf("a11y")
             "root" -> listOf("root")

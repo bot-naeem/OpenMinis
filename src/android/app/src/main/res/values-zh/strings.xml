@@ -2187,4 +2187,14 @@
     <string name="perm_section_sandbox_browser_footer">提供独立的后台无痕浏览器环境，用于检索数据与网页交互，不干扰日常主浏览器。</string>
     <string name="perm_browser_use_title">沙盒浏览器工具</string>
     <string name="perm_browser_use_sub">为 Agent 提供专用的网页渲染、DOM 树提取与脚本执行工具。</string>
+
+    <!-- Default Digital Assistant -->
+    <string name="assistant_service_label">Minis 智能助手</string>
+    <string name="default_assistant_title">默认数字助理</string>
+    <string name="default_assistant_desc">长按电源键或屏幕底部角斜滑一键唤起 Minis 闪电执行。</string>
+    <string name="default_assistant_status_active">已激活为系统默认助理</string>
+    <string name="default_assistant_status_inactive">未启用（点击前往系统设置开启）</string>
+    <string name="default_assistant_listening">在听您说…</string>
+    <string name="default_assistant_hint">请说出您的目标或点击打字…</string>
+    <string name="default_assistant_processing">正在执行…</string>
 </resources>

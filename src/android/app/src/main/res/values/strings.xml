@@ -2387,4 +2387,14 @@
     <string name="perm_section_sandbox_browser_footer">Isolated background web browser for scraping, DOM queries, and login flows without touching your main browser.</string>
     <string name="perm_browser_use_title">Sandbox Browser Tool</string>
     <string name="perm_browser_use_sub">Enable browser_use tool for web exploration and automated browsing tasks.</string>
+
+    <!-- Default Digital Assistant -->
+    <string name="assistant_service_label">Minis AI Assistant</string>
+    <string name="default_assistant_title">Default Digital Assistant</string>
+    <string name="default_assistant_desc">Wake Minis instantly by long-pressing power button or swiping diagonally from bottom corners.</string>
+    <string name="default_assistant_status_active">Active as default assistant</string>
+    <string name="default_assistant_status_inactive">Not active (tap to configure in System Settings)</string>
+    <string name="default_assistant_listening">Listening…</string>
+    <string name="default_assistant_hint">Speak or type your goal…</string>
+    <string name="default_assistant_processing">Executing…</string>
 </resources>

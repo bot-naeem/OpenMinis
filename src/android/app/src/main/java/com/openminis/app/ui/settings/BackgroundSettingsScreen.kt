@@ -110,6 +110,9 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
             com.openminis.app.service.DynamicIslandSupport.isDynamicIslandCapable(context),
         )
     }
+    var isAssistantActive by remember {
+        mutableStateOf(com.openminis.app.assistant.AssistantManager.isActiveAssistant(context))
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
@@ -120,6 +123,8 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
                 canDrawOverlays =
                     Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
                         Settings.canDrawOverlays(context)
+                isAssistantActive =
+                    com.openminis.app.assistant.AssistantManager.isActiveAssistant(context)
                 // [T-android-island-capability-ttl] The user may have just
                 // flipped Live Updates in system settings: drop the cached
                 // answer so this re-probe really asks the platform.
@@ -154,6 +159,31 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
                 .verticalScroll(rememberScrollState()),
         ) {
             Spacer(Modifier.size(8.dp))
+
+            // Default Digital Assistant (VoiceInteractionService)
+            BgSectionTitle(stringResource(R.string.default_assistant_title))
+            BgRow(
+                icon = Icons.Outlined.PhoneAndroid,
+                iconColor = if (isAssistantActive) Color(0xFF34C759) else Color(0xFF007AFF),
+                title = stringResource(R.string.default_assistant_title),
+                subtitle = if (isAssistantActive) {
+                    stringResource(R.string.default_assistant_status_active)
+                } else {
+                    stringResource(R.string.default_assistant_status_inactive)
+                },
+                onClick = {
+                    try {
+                        context.startActivity(com.openminis.app.assistant.AssistantManager.createAssistantSettingsIntent())
+                    } catch (e: Exception) {
+                        try {
+                            context.startActivity(Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        } catch (_: Exception) {}
+                    }
+                },
+            )
+            BgFooter(stringResource(R.string.default_assistant_desc))
+            Spacer(Modifier.size(12.dp))
+
             // T180-bg-notif: Task Notifications toggle. Mirrors iOS
             // EnhancedBackgroundSettingsView's first section (the toggle
             // ships ON to match iOS default — see

@@ -601,5 +601,38 @@
                 android:resource="@xml/method" />
         </service>
 
+        <!-- Official Android Default Digital Assistant (VoiceInteractionService) -->
+        <service
+            android:name=".assistant.MinisVoiceInteractionService"
+            android:exported="true"
+            android:label="@string/assistant_service_label"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <intent-filter>
+                <action android:name="android.service.voice.VoiceInteractionService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.voice_interaction"
+                android:resource="@xml/voice_interaction_service" />
+        </service>
+
+        <!-- SessionService backing assistant overlay sessions -->
+        <service
+            android:name=".assistant.MinisVoiceInteractionSessionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
+
+        <!-- Fallback Assist Activity for system ACTION_ASSIST triggers -->
+        <activity
+            android:name=".assistant.AssistActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
     </application>
 </manifest>
