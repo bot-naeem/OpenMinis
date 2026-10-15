@@ -96,6 +96,10 @@ class ScheduledPrefillWiringTest {
 
         // System prompt internalized host operations into Execution Environment and eliminated android-* CLI hallucinations
         assertTrue(vm.contains("Execution environment & Android Host Privileged Operations:"))
+        assertTrue(vm.contains("Native Fast-Path Utility Services (ALWAYS PREFER OVER GUI SCREEN AUTOMATION):"))
+        assertTrue(vm.contains("android-alarm set --time HH:MM"))
+        assertTrue(vm.contains("APP FAST-LAUNCH & DEEPLINK PROTOCOL (NEVER HUNT ICONS ON THE LAUNCHER):"))
+        assertTrue(vm.contains("SCREEN TRANSITION & DIFF SENSING (视觉差分感知与防空转机制):"))
         assertFalse(vm.contains("Android framework commands (available to run via shell_execute):"))
         assertFalse(vm.contains("Android-only tools (android-* CLIs)"))
         assertFalse(vm.contains("the `android` tool"))

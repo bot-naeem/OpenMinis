@@ -205,6 +205,10 @@ class ScreenToolTest {
         // Known aliases
         assertEquals("com.tencent.mm", ScreenTool.resolvePackageName("微信"))
         assertEquals("com.tencent.mm", ScreenTool.resolvePackageName("WeChat"))
+        assertEquals("com.eg.android.AlipayGphone", ScreenTool.resolvePackageName("支付宝"))
+        assertEquals("com.eg.android.AlipayGphone", ScreenTool.resolvePackageName("alipay"))
+        assertEquals("com.google.android.deskclock", ScreenTool.resolvePackageName("时钟"))
+        assertEquals("com.google.android.calendar", ScreenTool.resolvePackageName("日历"))
         assertEquals("com.xingin.xhs", ScreenTool.resolvePackageName("小红书"))
         assertEquals("com.xingin.xhs", ScreenTool.resolvePackageName("xhs"))
         assertEquals("com.sankuai.meituan", ScreenTool.resolvePackageName("美团"))
@@ -218,5 +222,28 @@ class ScreenToolTest {
         // Blank returns null
         assertNull(ScreenTool.resolvePackageName(""))
         assertNull(ScreenTool.resolvePackageName("   "))
+    }
+
+    @Test
+    fun `computeDiffRatio correctly detects identical, inverted, and minor changes`() {
+        val allBlack = IntArray(256) { 0 }
+        val allWhite = IntArray(256) { 255 }
+        val halfGray = IntArray(256) { 128 }
+
+        // Identical frames have 0 diff
+        assertEquals(0.0f, ScreenTool.computeDiffRatio(allBlack, allBlack), 0.0001f)
+        assertEquals(0.0f, ScreenTool.computeDiffRatio(allWhite, allWhite), 0.0001f)
+
+        // Completely inverted frames have 1.0 diff (100% change)
+        assertEquals(1.0f, ScreenTool.computeDiffRatio(allBlack, allWhite), 0.0001f)
+
+        // Half difference
+        assertEquals(128.0f / 255.0f, ScreenTool.computeDiffRatio(allBlack, halfGray), 0.001f)
+
+        // Tiny change (<0.8%)
+        val slightChange = allBlack.clone()
+        slightChange[0] = 50 // only 1 pixel changed slightly
+        val tinyDiff = ScreenTool.computeDiffRatio(allBlack, slightChange)
+        assertTrue(tinyDiff < 0.008f)
     }
 }

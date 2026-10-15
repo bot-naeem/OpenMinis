@@ -81,6 +81,40 @@ object ScreenTool {
     }
 
     private val lastPerceivedElements = ConcurrentHashMap<Int, DetectedElement>()
+    private val lastFrameLumaBySession = ConcurrentHashMap<String, IntArray>()
+
+    fun computeLumaSignature(bitmap: Bitmap): IntArray {
+        val sampleSize = 16
+        val thumb = Bitmap.createScaledBitmap(bitmap, sampleSize, sampleSize, false)
+        val pixels = IntArray(sampleSize * sampleSize)
+        thumb.getPixels(pixels, 0, sampleSize, 0, 0, sampleSize, sampleSize)
+        if (thumb !== bitmap) thumb.recycle()
+        return IntArray(pixels.size) { i ->
+            val c = pixels[i]
+            val r = (c shr 16) and 0xff
+            val g = (c shr 8) and 0xff
+            val b = c and 0xff
+            (r * 299 + g * 587 + b * 114) / 1000
+        }
+    }
+
+    fun computeDiffRatio(luma1: IntArray, luma2: IntArray): Float {
+        if (luma1.size != luma2.size || luma1.isEmpty()) return 1.0f
+        var totalDiff = 0L
+        for (i in luma1.indices) {
+            totalDiff += kotlin.math.abs(luma1[i] - luma2[i])
+        }
+        val maxDiff = luma1.size * 255.0
+        return (totalDiff / maxDiff).toFloat()
+    }
+
+    fun resetFrameHistory(sessionId: String? = null) {
+        if (sessionId != null) {
+            lastFrameLumaBySession.remove(sessionId)
+        } else {
+            lastFrameLumaBySession.clear()
+        }
+    }
 
     fun viewDefinition(): AgentToolDefinition = AgentToolDefinition(
         name = ToolNames.SCREEN_VIEW,
@@ -702,6 +736,14 @@ object ScreenTool {
         val baseW = if (screenW > 0) screenW else origW
         val baseH = if (screenH > 0) screenH else origH
 
+        // Perceptual frame diff: track UI state transitions across turns
+        val lumaSig = computeLumaSignature(rawBitmap)
+        val sessKey = sessionId ?: "global"
+        val prevLuma = lastFrameLumaBySession[sessKey]
+        val diffRatio = if (prevLuma != null) computeDiffRatio(lumaSig, prevLuma) else 1.0f
+        lastFrameLumaBySession[sessKey] = lumaSig
+        val screenChanged = prevLuma == null || diffRatio >= 0.008f
+
         // Visual Grounding: detect interactive elements via Accessibility
         val detected = detectInteractiveElements(context, baseW, baseH)
         lastPerceivedElements.clear()
@@ -759,6 +801,11 @@ object ScreenTool {
         val json = JSONObject().apply {
             put("ok", true)
             put("action", "capture")
+            put("screen_changed", screenChanged)
+            put("screen_diff_ratio", (diffRatio * 1000).roundToInt() / 1000.0)
+            if (!screenChanged) {
+                put("screen_note", "Screen appears virtually identical to previous step (<0.8% change). The target app may still be loading, or the tap did not trigger a UI transition.")
+            }
             put("som_enabled", enableSom && detected.isNotEmpty())
             put("elements_count", detected.size)
             if (detected.isNotEmpty()) put("elements", elementsJson)
@@ -1387,10 +1434,14 @@ object ScreenTool {
         val knownAliases = mapOf(
             "微信" to "com.tencent.mm",
             "wechat" to "com.tencent.mm",
+            "支付宝" to "com.eg.android.AlipayGphone",
+            "alipay" to "com.eg.android.AlipayGphone",
             "qq" to "com.tencent.mobileqq",
             "小红书" to "com.xingin.xhs",
             "xhs" to "com.xingin.xhs",
             "美团" to "com.sankuai.meituan",
+            "时钟" to "com.google.android.deskclock",
+            "日历" to "com.google.android.calendar",
             "大众点评" to "com.dianping.v1",
             "淘宝" to "com.taobao.taobao",
             "京东" to "com.jingdong.app.mall",
