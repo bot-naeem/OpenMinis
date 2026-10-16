@@ -4,11 +4,13 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Accessibility
+import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BatteryAlert
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Description
@@ -53,8 +55,11 @@ import com.openminis.app.offload.ShizukuManager
 import com.openminis.app.power.PowerOptimizationManager
 import com.openminis.app.sandbox.RootAccess
 import com.openminis.app.tools.AgentToolSwitch
+import com.openminis.app.ui.aurora.AuroraGlowManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * System Privilege & Automation Control Center (tailored for rooted Android power users).
@@ -83,8 +88,10 @@ fun OffloadPermissionScreen(
         mutableStateOf(AgentToolSwitch.BROWSER.isEnabled(context))
     }
 
+    var isRequestingRoot by remember { mutableStateOf(false) }
     var rootGranted by remember { mutableStateOf(RootAccess.isRootGranted()) }
     var rootInstalled by remember { mutableStateOf(RootAccess.isRootInstalled()) }
+    var overlayGranted by remember { mutableStateOf(AuroraGlowManager.hasOverlayPermission(context)) }
 
     val a11yEnabled by A11yState.isEnabled.collectAsState()
     var a11yConnected by remember { mutableStateOf(MinisAccessibilityService.getInstance() != null) }
@@ -109,9 +116,12 @@ fun OffloadPermissionScreen(
                 AccessibilityRecoveryManager.hasEverBeenGranted(context)
             a11yRestricted = !inSettings && RestrictedSettingsManager.isRestricted(context)
             shizukuReady = ShizukuManager.isReady()
-            rootGranted = RootAccess.isRootGranted()
-            rootInstalled = RootAccess.isRootInstalled()
-            delay(1500)
+            overlayGranted = AuroraGlowManager.hasOverlayPermission(context)
+            if (!isRequestingRoot) {
+                rootGranted = RootAccess.isRootGranted()
+                rootInstalled = RootAccess.isRootInstalled()
+            }
+            delay(2000)
         }
     }
 
@@ -138,13 +148,38 @@ fun OffloadPermissionScreen(
             SettingsRow(
                 title = stringResource(R.string.perm_root_cli_title),
                 subtitle = when {
+                    isRequestingRoot -> "正在请求 Superuser 授权..."
                     rootGranted -> "su (UID 0) · Magisk / KernelSU"
-                    rootInstalled -> "su " + stringResource(R.string.shizuku_badge_need_permission)
+                    rootInstalled -> "su " + stringResource(R.string.shizuku_badge_need_permission) + " · 点击申请授权"
                     else -> stringResource(R.string.perm_state_not_installed)
                 },
                 icon = Icons.Outlined.Lock,
                 iconColor = Color(0xFFFF3B30),
-                showChevron = false,
+                onClick = {
+                    if (isRequestingRoot) return@SettingsRow
+                    if (rootGranted) {
+                        Toast.makeText(context, "Root 权限已就绪 (UID 0)", Toast.LENGTH_SHORT).show()
+                        return@SettingsRow
+                    }
+                    isRequestingRoot = true
+                    scope.launch(Dispatchers.IO) {
+                        val res = RootAccess.requestRoot(15_000L)
+                        val ok = res != null && res.exitCode == 0 && res.stdout.contains("uid=0")
+                        withContext(Dispatchers.Main) {
+                            rootGranted = ok
+                            isRequestingRoot = false
+                            if (ok) {
+                                Toast.makeText(context, "Root 授权成功 (UID 0)", Toast.LENGTH_SHORT).show()
+                                if (!overlayGranted && AuroraGlowManager.tryAutoGrantOverlayWithRoot(context)) {
+                                    overlayGranted = true
+                                }
+                            } else {
+                                Toast.makeText(context, "未获得 Root 授权，请在 Magisk/KernelSU 中允许 Minis", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                },
+                showChevron = !rootGranted,
                 trailing = {
                     Text(
                         text = if (rootGranted) stringResource(R.string.shizuku_badge_ready) else stringResource(R.string.perm_state_off),
@@ -254,6 +289,35 @@ fun OffloadPermissionScreen(
                 },
                 icon = Icons.Outlined.PhoneAndroid,
                 iconColor = Color(0xFF34C759),
+                showDivider = true,
+            )
+
+            // Aurora Edge Glow (Overlay Permission)
+            SettingsRow(
+                title = "全屏极光流光 (悬浮窗权限)",
+                subtitle = if (overlayGranted) "已授权 · 屏幕四周渐变极光流光正常展现" else "未授权 · 点击开启“在其他应用上层显示”",
+                icon = Icons.Outlined.AutoAwesome,
+                iconColor = Color(0xFF00F5D4),
+                onClick = {
+                    if (!overlayGranted) {
+                        if (AuroraGlowManager.tryAutoGrantOverlayWithRoot(context)) {
+                            overlayGranted = true
+                            Toast.makeText(context, "已通过 Root 自动开启悬浮窗权限", Toast.LENGTH_SHORT).show()
+                        } else {
+                            AuroraGlowManager.openOverlaySettings(context)
+                        }
+                    } else {
+                        Toast.makeText(context, "全屏流光权限已就绪", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                showChevron = !overlayGranted,
+                trailing = {
+                    Text(
+                        text = if (overlayGranted) stringResource(R.string.perm_state_on) else stringResource(R.string.perm_state_off),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (overlayGranted) Color(0xFF34C759) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
                 showDivider = true,
             )
 

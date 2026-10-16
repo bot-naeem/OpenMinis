@@ -160,6 +160,10 @@ object AuroraGlowManager {
 
     private fun showInternal(context: Context, state: AuroraState): Boolean {
         if (!hasOverlayPermission(context)) {
+            // Attempt root auto-grant if host root privilege is active
+            tryAutoGrantOverlayWithRoot(context)
+        }
+        if (!hasOverlayPermission(context)) {
             AppLogger.warning(TAG, "Cannot show Aurora glow: SYSTEM_ALERT_WINDOW permission not granted")
             return false
         }
@@ -237,8 +241,44 @@ object AuroraGlowManager {
         return true
     }
 
-    private fun hasOverlayPermission(context: Context): Boolean {
+    fun hasOverlayPermission(context: Context): Boolean {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
+    }
+
+    /**
+     * Attempts to silently grant SYSTEM_ALERT_WINDOW via root (appops) if host root
+     * execution is currently granted.
+     */
+    fun tryAutoGrantOverlayWithRoot(context: Context): Boolean {
+        if (hasOverlayPermission(context)) return true
+        if (com.openminis.app.sandbox.RootAccess.isRootGranted()) {
+            val pkg = context.packageName
+            val res = com.openminis.app.sandbox.RootAccess.runSu("appops set $pkg SYSTEM_ALERT_WINDOW allow")
+            if (res != null && res.exitCode == 0) {
+                AppLogger.info(TAG, "Successfully auto-granted SYSTEM_ALERT_WINDOW via root for $pkg")
+                return hasOverlayPermission(context)
+            }
+        }
+        return false
+    }
+
+    /**
+     * Direct deep-link navigation to Android system "Display over other apps" settings.
+     */
+    fun openOverlaySettings(context: Context) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val intent = android.content.Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    android.net.Uri.parse("package:${context.packageName}")
+                ).apply {
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+            }
+        } catch (e: Exception) {
+            AppLogger.warning(TAG, "Could not open overlay settings: ${e.message}")
+        }
     }
 
     /**

@@ -49,6 +49,17 @@ object RootAccess {
         "/debug_ramdisk/su",
     )
 
+    /**
+     * Resolves the accessible su binary path from known locations or falls back to "su".
+     */
+    fun findSuBinary(): String {
+        for (path in SU_PATHS) {
+            val f = File(path)
+            if (f.exists()) return path
+        }
+        return "su"
+    }
+
     /** `su` exists somewhere. Says nothing about whether the grant is granted. */
     fun isRootInstalled(): Boolean {
         for (path in SU_PATHS) {
@@ -67,6 +78,15 @@ object RootAccess {
     }
 
     /**
+     * Actively probe or prompt for superuser grant with a user-friendly timeout
+     * so that if Magisk / KernelSU presents an interactive authorization dialog,
+     * the user has ample time (15s) to confirm it.
+     */
+    fun requestRoot(timeoutMs: Long = 15_000L): SuResult? {
+        return runSu("id", timeoutMs = timeoutMs)
+    }
+
+    /**
      * Run a command through `su -c`. Drains stdout and stderr concurrently in background
      * reader threads so pipes never block or trigger SIGPIPE on large outputs.
      * Returns a [SuResult] containing stdout, stderr and exitCode, or null if the
@@ -77,8 +97,9 @@ object RootAccess {
         timeoutMs: Long = 10_000L,
         maxOutputChars: Int = 65_536,
     ): SuResult? {
+        val suBin = findSuBinary()
         return try {
-            val process = ProcessBuilder("su", "-c", command).start()
+            val process = ProcessBuilder(suBin, "-c", command).start()
             val stdoutBuilder = StringBuilder()
             val stderrBuilder = StringBuilder()
 
@@ -141,7 +162,8 @@ object RootAccess {
             val errStr = synchronized(stderrBuilder) { stderrBuilder.toString() }
 
             SuResult(stdout = outStr, stderr = errStr, exitCode = exitCode)
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            android.util.Log.w("RootAccess", "Failed to execute $suBin: ${e.message}")
             null
         }
     }

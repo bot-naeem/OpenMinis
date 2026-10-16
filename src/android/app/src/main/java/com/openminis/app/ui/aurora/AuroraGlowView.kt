@@ -50,7 +50,8 @@ class AuroraGlowView @JvmOverloads constructor(
     private var currentState = AuroraState.EXECUTING
 
     @Volatile
-    var isShutterHidden: Boolean = false
+    private var _isShutterHidden: Boolean = false
+    val isShutterHidden: Boolean get() = _isShutterHidden
 
     init {
         fitsSystemWindows = false
@@ -77,7 +78,7 @@ class AuroraGlowView @JvmOverloads constructor(
     }
 
     fun setShutterHidden(hidden: Boolean) {
-        isShutterHidden = hidden
+        _isShutterHidden = hidden
         alpha = if (hidden) 0f else 1f
         invalidate()
     }

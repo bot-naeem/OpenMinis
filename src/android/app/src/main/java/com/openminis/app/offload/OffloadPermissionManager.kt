@@ -73,9 +73,9 @@ object OffloadPermissionManager {
         ToolPermissionInfo("screen", "Screen Automation", PermissionCategory.INTEGRATIONS, PermissionLevel.BYPASS),
         // Sandbox Browser (browser_use)
         ToolPermissionInfo("browser_use", "Sandbox Browser", PermissionCategory.INTEGRATIONS, PermissionLevel.BYPASS),
-        // Privileged backends: Shizuku and Accessibility
-        ToolPermissionInfo("shizuku_cli", "android-shizuku-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.NOT_ALLOWED),
-        ToolPermissionInfo("a11y_cli", "android-a11y-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.NOT_ALLOWED),
+        // Privileged backends: Shizuku and Accessibility (defaults to BYPASS; gated by runtime service status)
+        ToolPermissionInfo("shizuku_cli", "android-shizuku-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.BYPASS),
+        ToolPermissionInfo("a11y_cli", "android-a11y-cli", PermissionCategory.INTEGRATIONS, PermissionLevel.BYPASS),
         // Host filesystem tools (/data protection)
         ToolPermissionInfo("read", "Read files", PermissionCategory.SYSTEM, PermissionLevel.BYPASS, showInSettings = true),
         ToolPermissionInfo("write", "Write files", PermissionCategory.SYSTEM, PermissionLevel.BYPASS, showInSettings = true),

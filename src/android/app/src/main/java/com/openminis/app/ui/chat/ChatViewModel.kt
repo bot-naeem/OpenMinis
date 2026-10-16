@@ -10641,6 +10641,13 @@ class ChatViewModel(
         prefill: List<com.openminis.app.scheduled.PrefilledToolCall> = emptyList(),
     ) {
         AppLogger.info(TAG_STREAM, "runAgentLoop ENTER provider=${provider.javaClass.simpleName} historySize=${agentHistory.size}")
+        activeSessionId?.let { sid ->
+            com.openminis.app.ui.aurora.AuroraGlowManager.acquire(
+                context,
+                sid,
+                com.openminis.app.ui.aurora.AuroraState.THINKING,
+            )
+        }
         // [T-android-mem-probe-trust] Send-path context shape. The existing
         // `messages-shape` probe only runs on session LOAD, so the 2026-08-15
         // log described the session as it was opened, never as it was sent —
@@ -10899,6 +10906,7 @@ class ChatViewModel(
         // prefill re-arms it (see the injectQueuedPromptsAsNewTurn call site).
         var pendingScriptedTurn: com.openminis.app.scheduled.ScriptedToolTurn? = scriptedTurnFor(prefill)
         for (turn in 0 until turnCap) {
+            com.openminis.app.ui.aurora.AuroraGlowManager.setState(com.openminis.app.ui.aurora.AuroraState.THINKING)
             // [T-android-switch-model-next-request] The user picked another
             // model while this turn ran. Apply it HERE, before the next
             // request: the request or tool call that was in flight when they
@@ -12864,6 +12872,7 @@ class ChatViewModel(
                         }
 
                         android.util.Log.d("ToolChain[VM]", "[turn=$turn] executeTool START name=$name args=${argsStr.take(200)}")
+                        com.openminis.app.ui.aurora.AuroraGlowManager.setState(com.openminis.app.ui.aurora.AuroraState.EXECUTING)
                         val result = executeTool(name, argsStr, id, allToolBlocks, assistantId, accumulatedText)
                         android.util.Log.d("ToolChain[VM]", "[turn=$turn] executeTool END name=$name success=${result.success} title=${result.toolTitle} outputLen=${result.output.length} output=${result.output.take(200)}")
 
@@ -15570,6 +15579,7 @@ Execution environment & Android Host Privileged Operations:
   * System Properties & Diagnostics: read properties (`getprop ro.build.version.release`), battery status (`dumpsys battery`), memory info (`dumpsys meminfo <pkg>`), logcat (`logcat -d -t 100`).
   * Direct Filesystem Access: access app private data (`/data/data/<package>/`), external storage (`/sdcard/`, `/storage/emulated/0/`).
 - Root execution is protected by RootCommandGuard and permission-gated. If root permission is denied, point the user at [Settings → Permissions](minis://settings/permissions) — do not retry.
+- When the user asks to test, check, request, or verify Root permission (e.g. "申请Root权限", "测试Root", "检查Root", "获取Root"), DO NOT use android-a11y-cli, android-shizuku-cli, or GUI screen automation to hunt for dialogs! Directly execute `bash(command="id", as_root=true)`. This triggers the host superuser authorization prompt (Magisk / KernelSU) and outputs the UID status in 1 turn.
 
 Interactive terminal: minis://open_terminal opens a terminal for tasks that require interactive stdin (passwords, ssh, TUI apps like htop/vi). Write it as a Markdown link in your response — the app opens it when tapped. The optional init_command parameter pre-fills (NOT executes) a command; it MUST be fully percent-encoded (spaces → %20, & → %26, | → %7C, etc.). Only use this for genuinely interactive sessions — for everything else, use bash. Examples: [Open Terminal](minis://open_terminal), [Login to SSH](minis://open_terminal?init_command=ssh%20user%40host).
 
