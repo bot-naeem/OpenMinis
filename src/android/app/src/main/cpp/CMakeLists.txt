@@ -22,3 +22,12 @@ find_library(log-lib log)
 target_link_libraries(pty_bridge ${log-lib})
 target_link_libraries(minis_crash_handler ${log-lib})
 target_link_libraries(jieba_jni ${log-lib})
+
+# Global hardware wakeup daemon via Linux input layer grab and uinput pass-through
+add_executable(minis_power_daemon power_key_daemon.c)
+set_target_properties(minis_power_daemon PROPERTIES
+    PREFIX "lib"
+    SUFFIX ".so"
+)
+target_link_libraries(minis_power_daemon ${log-lib})
+

@@ -37,6 +37,7 @@ import com.openminis.app.ui.settings.AddAgentLoopModelsScreen
 import com.openminis.app.ui.settings.AddCustomModelScreen
 import com.openminis.app.ui.settings.BackgroundSettingsScreen
 import com.openminis.app.ui.settings.AddModelsToGroupScreen
+import com.openminis.app.ui.settings.OnDeviceSpeechSettingsScreen
 import com.openminis.app.ui.settings.ShadowVoiceDetailScreen
 import com.openminis.app.ui.settings.AddProviderScreen
 import com.openminis.app.ui.settings.ModelEntryDetailScreen
@@ -178,6 +179,7 @@ object Routes {
     const val SOUL = "soul"
     const val MEMORY_FILE_EDIT = "memory_file/{fileName}/{isGlobal}"
     const val PERMISSIONS = "permissions"
+    const val ON_DEVICE_SPEECH = "on_device_speech"
     /**
      * T322 / [T-android-privileged-backend]: Shizuku-protocol manager
      * walkthrough — handles both Shizuku and AXManager (they share the same
@@ -629,6 +631,7 @@ fun AppNavigation(
                 onAboutClick = { navController.safeNavigate(Routes.ABOUT) },
                 onMountedFoldersClick = { navController.safeNavigate(Routes.MOUNTED_FOLDERS) },
                 onSharedFoldersClick = { navController.safeNavigate(Routes.SHARED_FOLDERS) },
+                onOnDeviceSpeechClick = { navController.safeNavigate(Routes.ON_DEVICE_SPEECH) },
             )
         }
 
@@ -1393,6 +1396,12 @@ fun AppNavigation(
                 // multi-backend abstraction was misleading).
                 onOpenPrivilegedBackend = { navController.safeNavigate(Routes.SHIZUKU) },
                 onOpenLogs = { navController.safeNavigate(Routes.LOGS) },
+            )
+        }
+
+        composable(Routes.ON_DEVICE_SPEECH) {
+            OnDeviceSpeechSettingsScreen(
+                onBack = { navController.safePopBackStack() },
             )
         }
 

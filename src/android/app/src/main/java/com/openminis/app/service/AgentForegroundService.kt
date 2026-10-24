@@ -320,6 +320,7 @@ class AgentForegroundService : Service() {
             com.openminis.app.ime.ImeManager.forceRestore(this, "service_stop")
             com.openminis.app.notification.HeadsUpNotificationManager.forceRestore(this, "service_stop")
             com.openminis.app.ui.aurora.AuroraGlowManager.forceRestore(this, "service_stop")
+            com.openminis.app.ui.overlay.AgentInterventionOverlayManager.hide()
             // T50: the notification's Stop action — also cancel every
             // running agent loop. Without this, stopSelf() alone leaves
             // streamJobs running until the OS reclaims the process; the

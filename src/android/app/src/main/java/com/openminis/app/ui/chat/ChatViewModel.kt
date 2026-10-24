@@ -15319,17 +15319,47 @@ class ChatViewModel(
         return entity.id
     }
 
+    /**
+     * Session-scoped time info. Captured once on the first turn of the conversation
+     * session and kept byte-stable across all subsequent interaction turns, tool loops,
+     * and follow-ups within this session.
+     * This avoids prompt cache misses across seconds/minutes boundaries and ensures
+     * maximum prefix KV cache hit rate for prompt caching.
+     */
+    private data class SessionTimeInfo(
+        val dateStr: String,
+        val formattedDateTime: String,
+    )
+
+    @Volatile
+    private var sessionTimeInfo: SessionTimeInfo? = null
+
+    private fun getOrCreateSessionTimeInfo(): SessionTimeInfo {
+        sessionTimeInfo?.let { return it }
+        synchronized(this) {
+            sessionTimeInfo?.let { return it }
+            val now = java.time.ZonedDateTime.now()
+            val zoneId = now.zone.id
+            val dayOfWeek = now.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.getDefault())
+            val dateStr = now.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
+            val fullTimeStr = now.format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+            val formatted = "$fullTimeStr ($dayOfWeek, $zoneId)"
+            val info = SessionTimeInfo(dateStr = dateStr, formattedDateTime = formatted)
+            sessionTimeInfo = info
+            return info
+        }
+    }
+
     private fun buildSystemPrompt(): String? {
         // Cache-friendly layout: keep `base` byte-stable by stripping out anything
         // that varies per request, then append a "Runtime context" suffix at the
         // very end with all the dynamic bits (date, timezone, locale, configured
         // minis-model-use count). OpenAI / DeepSeek prompt caching is prefix-
         // based, so the longer the static head, the better the hit rate.
-        // Pre-T122 the prompt embedded `Current time: yyyy-MM-dd HH:mm` mid-base,
-        // which guaranteed cache misses across minute boundaries — even a quick
-        // follow-up could land on a different minute and pay full ingestion.
-        val today = java.time.LocalDate.now()
-        val dateStr = today.format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE)
+        // Dynamic time is captured once per conversation session (SessionTimeInfo)
+        // so that prompt prefix KV caching is 100% preserved across subsequent turns.
+        val timeInfo = getOrCreateSessionTimeInfo()
+        val dateStr = timeInfo.dateStr
         val tzId = java.util.TimeZone.getDefault().id
         val lang = context.resources.configuration.locales[0].toLanguageTag()
 
@@ -15650,12 +15680,13 @@ Scheduled tasks: crontab / at / nohup loops will stop when the app is suspended,
                 append(dailyMemoryFragment)
             }
             // Runtime context goes last so the prefix above stays byte-stable
-            // across requests within the same day. Keep ordering deterministic
-            // (date → tz → lang → model count) — any reorder defeats the cache.
+            // across requests within the same session. Keep ordering deterministic
+            // (date → tz → lang → model count → date and time) — any reorder defeats the cache.
             append("\n\nRuntime context:\n")
             append("- Current date: ").append(dateStr).append(" (").append(tzId).append(")\n")
             append("- Device language: ").append(lang).append("\n")
-            append("- minis-model-use models available: ").append(modelUseCount)
+            append("- minis-model-use models available: ").append(modelUseCount).append("\n")
+            append("- Current date and time: ").append(timeInfo.formattedDateTime)
         }
     }
 

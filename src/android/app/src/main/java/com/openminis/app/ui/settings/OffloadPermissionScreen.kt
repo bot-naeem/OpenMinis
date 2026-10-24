@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Accessibility
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BatteryAlert
+import androidx.compose.material.icons.outlined.Bolt
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
@@ -26,8 +27,11 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.openminis.app.daemon.PowerKeyDaemonManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -103,12 +107,19 @@ fun OffloadPermissionScreen(
     var repairFailed by remember { mutableStateOf(false) }
     var shizukuReady by remember { mutableStateOf(ShizukuManager.isReady()) }
 
+    val daemonRunning by PowerKeyDaemonManager.isDaemonActive.collectAsState()
+    val daemonPid by PowerKeyDaemonManager.runningPid.collectAsState()
+    var isOperatingDaemon by remember { mutableStateOf(false) }
+    var showVendorRomDialog by remember { mutableStateOf(false) }
+
     var showResetConfirm by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         A11yState.init(context)
+        PowerKeyDaemonManager.refreshStatus()
         while (true) {
             A11yState.refresh(context)
+            PowerKeyDaemonManager.refreshStatus()
             val inSettings = A11yState.isEnabled.value
             val connected = MinisAccessibilityService.getInstance() != null
             a11yConnected = connected
@@ -172,6 +183,9 @@ fun OffloadPermissionScreen(
                                 Toast.makeText(context, "Root 授权成功 (UID 0)", Toast.LENGTH_SHORT).show()
                                 if (!overlayGranted && AuroraGlowManager.tryAutoGrantOverlayWithRoot(context)) {
                                     overlayGranted = true
+                                }
+                                scope.launch(Dispatchers.IO) {
+                                    PowerKeyDaemonManager.restart(context)
                                 }
                             } else {
                                 Toast.makeText(context, "未获得 Root 授权，请在 Magisk/KernelSU 中允许 Minis", Toast.LENGTH_LONG).show()
@@ -269,7 +283,96 @@ fun OffloadPermissionScreen(
             )
         }
 
-        // ── ② Screen Perception & GUI Automation (screen_view / screen_touch) ──
+        // ── ② Global Power Key Hardware Intercept (Linux Input / Root Daemon) ──
+        SettingsSection(
+            header = "全局长按电源键唤醒 (Root 硬件守护)",
+            footer = "通过 Root 独占拦截 /dev/input 电源键 Linux Event，长按 0.8s 切断系统关机菜单并唤醒极光交互。若被厂商 ROM 杀掉或重启手机后未运行，可在此手动启动或排查。",
+        ) {
+            // Daemon Switch & Running Status
+            SettingsSwitchRow(
+                title = "电源键硬件级拦截守护",
+                subtitle = when {
+                    isOperatingDaemon -> "正在操作守护进程..."
+                    daemonRunning -> "正在运行 (PID $daemonPid) · 独占截获 /dev/input"
+                    rootGranted -> "未运行 · 请开启开关或点击下方一键启动"
+                    else -> "未运行 · 需在上方先授予 Root 权限"
+                },
+                checked = daemonRunning,
+                enabled = rootGranted && !isOperatingDaemon,
+                onCheckedChange = { checked ->
+                    scope.launch(Dispatchers.IO) {
+                        isOperatingDaemon = true
+                        if (checked) {
+                            PowerKeyDaemonManager.restart(context)
+                        } else {
+                            PowerKeyDaemonManager.stop()
+                        }
+                        isOperatingDaemon = false
+                    }
+                },
+                icon = Icons.Outlined.Bolt,
+                iconColor = if (daemonRunning) Color(0xFFFF9500) else MaterialTheme.colorScheme.onSurfaceVariant,
+                showDivider = true,
+            )
+
+            // Manual Restart / Reload
+            SettingsRow(
+                title = "一键启动 / 重启守护进程",
+                subtitle = "清理残留进程，重新检索 /dev/input 节点并建立 Socket",
+                icon = Icons.Outlined.RestartAlt,
+                iconColor = Color(0xFF007AFF),
+                onClick = {
+                    if (!rootGranted) {
+                        Toast.makeText(context, "请先在上方获取 Root 授权", Toast.LENGTH_SHORT).show()
+                        return@SettingsRow
+                    }
+                    if (isOperatingDaemon) return@SettingsRow
+                    scope.launch(Dispatchers.IO) {
+                        isOperatingDaemon = true
+                        val (ok, msg) = PowerKeyDaemonManager.restart(context)
+                        withContext(Dispatchers.Main) {
+                            isOperatingDaemon = false
+                            if (ok) {
+                                Toast.makeText(context, "守护进程启动成功", Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "启动失败: $msg", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                },
+                showChevron = true,
+                showDivider = true,
+            )
+
+            // Test Wakeup Trigger
+            SettingsRow(
+                title = "模拟测试唤醒触发",
+                subtitle = "无需长按物理按键，向本地守护监听器直接注入唤醒信号",
+                icon = Icons.Outlined.AutoAwesome,
+                iconColor = Color(0xFF34C759),
+                onClick = {
+                    scope.launch {
+                        PowerKeyDaemonManager.testWakeup(context)
+                        Toast.makeText(context, "已触发唤醒测试", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                showChevron = true,
+                showDivider = true,
+            )
+
+            // Vendor ROM Guide Dialog trigger
+            SettingsRow(
+                title = "常见厂商 ROM 避坑与按键冲突指引",
+                subtitle = "小米澎湃/MIUI、OPPO ColorOS、vivo OriginOS、三星 OneUI 排查",
+                icon = Icons.Outlined.Build,
+                iconColor = Color(0xFFAF52DE),
+                onClick = { showVendorRomDialog = true },
+                showChevron = true,
+                showDivider = false,
+            )
+        }
+
+        // ── ③ Screen Perception & GUI Automation (screen_view / screen_touch) ──
         SettingsSection(
             header = stringResource(R.string.perm_section_screen_automation),
             footer = stringResource(R.string.perm_section_screen_automation_footer),
@@ -561,6 +664,31 @@ fun OffloadPermissionScreen(
             dismissButton = {
                 TextButton(onClick = { showResetConfirm = false }) {
                     Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
+
+    if (showVendorRomDialog) {
+        AlertDialog(
+            onDismissRequest = { showVendorRomDialog = false },
+            title = { Text("电源键唤醒避坑指引") },
+            text = {
+                Text(
+                    "【为什么 Root 后按电源键没反应或弹出系统助手？】\n\n" +
+                    "1. 厂商系统助手冲突：\n" +
+                    "• 小米 / 澎湃 OS：系统设置 -> 更多设置 -> 手势快捷方式 -> 长按电源键 0.5 秒，务必改为「无」或「关机菜单」，不要绑定小爱同学。\n" +
+                    "• OPPO / 一加 / ColorOS：设置 -> 便捷工具 / 辅助功能 -> 电源键 -> 长按电源键行为，关闭「呼出小布助手」，改为「电源菜单」。\n" +
+                    "• vivo OriginOS：设置 -> 快捷与辅助 -> 长按电源键，关闭「唤醒 Jovi / 蓝心小 V」。\n" +
+                    "• 三星 One UI：设置 -> 高级功能 -> 侧键 / 侧边按钮，长按改为「关机菜单」，不要选 Bixby。\n\n" +
+                    "2. 后台与 Root 存活：\n" +
+                    "• 确保已在 Magisk / KernelSU / APatch 中为 Minis 勾选「授予 Root 权限」。\n" +
+                    "• 本守护程序会独占监听 /dev/input/event*。若按下 0.8s 震动则代表拦截成功；若重启手机后失效，请进入本界面点击「一键启动守护」。"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showVendorRomDialog = false }) {
+                    Text("我知道了")
                 }
             },
         )

@@ -102,6 +102,8 @@ class AuroraGlowView @JvmOverloads constructor(
             AuroraState.THINKING -> 3200L  // Slower contemplative breathing
             AuroraState.PAUSED -> 4500L    // Calm, resting glow
             AuroraState.COMPLETED -> 1200L
+            AuroraState.LISTENING -> 1600L // Responsive, vibrant listening ripple
+            AuroraState.INTERVENTION -> 4000L // Gentle amber intervention beacon
             AuroraState.IDLE -> 1000L
         }
 
@@ -216,6 +218,18 @@ class AuroraGlowView @JvmOverloads constructor(
                 Color.parseColor("#06D6A0"), // Emerald Green
                 Color.parseColor("#2EC4B6"), // Mint Green
                 Color.parseColor("#06D6A0")
+            )
+            AuroraState.LISTENING -> intArrayOf(
+                Color.parseColor("#48CAE4"), // Sky Cyan
+                Color.parseColor("#7209B7"), // Electric Purple
+                Color.parseColor("#06D6A0"), // Neon Seafoam
+                Color.parseColor("#48CAE4")
+            )
+            AuroraState.INTERVENTION -> intArrayOf(
+                Color.parseColor("#FF5400"), // Flame Orange
+                Color.parseColor("#FF9E00"), // Amber
+                Color.parseColor("#FFD000"), // Warm Gold
+                Color.parseColor("#FF5400")
             )
             AuroraState.IDLE -> intArrayOf(
                 Color.TRANSPARENT,

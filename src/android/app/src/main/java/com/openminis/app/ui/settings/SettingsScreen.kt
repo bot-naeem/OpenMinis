@@ -34,6 +34,7 @@ import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderShared
 import androidx.compose.material.icons.outlined.FrontHand
+import androidx.compose.material.icons.outlined.GraphicEq
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Inventory2
 import androidx.compose.material.icons.outlined.Lock
@@ -112,6 +113,7 @@ fun SettingsScreen(
     // About row below still has a TODO onClick in HEAD; future settings-bucket
     // work will wire this through.
     onAboutClick: () -> Unit = {},
+    onOnDeviceSpeechClick: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var showFeedbackSheet by remember { mutableStateOf(false) }
@@ -154,6 +156,13 @@ fun SettingsScreen(
                     title = stringResource(R.string.settings_model_groups),
                     subtitle = stringResource(R.string.settings_model_groups_subtitle),
                     onClick = onModelGroupsClick,
+                )
+                SettingsItem(
+                    icon = Icons.Outlined.GraphicEq,
+                    iconColor = Color(0xFFFF9500),
+                    title = "端侧离线语音 (SenseVoice)",
+                    subtitle = "纯离线语音转文本 · 阿里 SenseVoice INT8 毫秒级识别",
+                    onClick = onOnDeviceSpeechClick,
                 )
                 SettingsItem(
                     icon = Icons.Outlined.BarChart,

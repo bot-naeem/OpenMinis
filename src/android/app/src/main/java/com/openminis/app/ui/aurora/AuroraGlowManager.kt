@@ -10,6 +10,7 @@ import android.view.Gravity
 import android.view.WindowManager
 import com.openminis.app.logging.AppLogger
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -19,7 +20,17 @@ enum class AuroraState {
     THINKING,
     EXECUTING,
     PAUSED,
-    COMPLETED
+    COMPLETED,
+    LISTENING,
+    INTERVENTION
+}
+
+/**
+ * Interface for components that must synchronize with the screenshot shutter blink.
+ */
+interface ShutterBlinkListener {
+    fun onShutterHide()
+    fun onShutterRestore()
 }
 
 /**
@@ -41,12 +52,23 @@ object AuroraGlowManager {
     private val activeSessions = ConcurrentHashMap.newKeySet<String>()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val isAttached = AtomicBoolean(false)
+    private val shutterListeners = CopyOnWriteArrayList<ShutterBlinkListener>()
 
     @Volatile
     private var glowView: AuroraGlowView? = null
 
     @Volatile
     private var windowManager: WindowManager? = null
+
+    fun registerShutterListener(listener: ShutterBlinkListener) {
+        if (!shutterListeners.contains(listener)) {
+            shutterListeners.add(listener)
+        }
+    }
+
+    fun unregisterShutterListener(listener: ShutterBlinkListener) {
+        shutterListeners.remove(listener)
+    }
 
     val activeSessionCount: Int get() = activeSessions.size
     val isShowing: Boolean get() = isAttached.get()
@@ -122,18 +144,23 @@ object AuroraGlowManager {
     }
 
     /**
-     * Shutter Blink: instantly hide overlay before physical screen capture.
+     * Shutter Blink: instantly hide overlay and all registered intervention overlays before physical screen capture.
      * Blocks up to [timeoutMs] to ensure main thread has applied alpha = 0.
      */
     fun hideForShutter(timeoutMs: Long = 40L) {
-        val view = glowView ?: return
         if (Looper.myLooper() == Looper.getMainLooper()) {
-            view.setShutterHidden(true)
+            glowView?.setShutterHidden(true)
+            for (listener in shutterListeners) {
+                try { listener.onShutterHide() } catch (_: Throwable) {}
+            }
         } else {
             val latch = CountDownLatch(1)
             mainHandler.post {
                 try {
-                    view.setShutterHidden(true)
+                    glowView?.setShutterHidden(true)
+                    for (listener in shutterListeners) {
+                        try { listener.onShutterHide() } catch (_: Throwable) {}
+                    }
                 } finally {
                     latch.countDown()
                 }
@@ -145,12 +172,21 @@ object AuroraGlowManager {
     }
 
     /**
-     * Shutter Blink: restore overlay alpha after physical screen capture completes.
+     * Shutter Blink: restore overlay alpha and intervention overlays after physical screen capture completes.
      */
     fun restoreAfterShutter() {
-        val view = glowView ?: return
-        mainHandler.post {
-            view.setShutterHidden(false)
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            glowView?.setShutterHidden(false)
+            for (listener in shutterListeners) {
+                try { listener.onShutterRestore() } catch (_: Throwable) {}
+            }
+        } else {
+            mainHandler.post {
+                glowView?.setShutterHidden(false)
+                for (listener in shutterListeners) {
+                    try { listener.onShutterRestore() } catch (_: Throwable) {}
+                }
+            }
         }
     }
 

@@ -148,11 +148,10 @@ class VoiceActivityDetector(
         private const val START_FRAMES = 10
 
         /**
-         * 156 frames ≈ 5.0 s of trailing silence before a segment closes.
-         * The single most user-visible knob: on silence the mic STOPS (see
-         * [SegmentEndReason.SILENCE_DETECTED]), matching iOS.
+         * 48 frames ≈ 1.5 s of trailing silence before a segment closes.
+         * Tuned for responsive conversational turn-taking without awkward 5-second silence hangs.
          */
-        private const val END_FRAMES = 156
+        private const val END_FRAMES = 48
 
         // ── Noise-aware AGC (iOS :62-71, :617-655) ──
         private const val GATE_RATIO = 2.5f

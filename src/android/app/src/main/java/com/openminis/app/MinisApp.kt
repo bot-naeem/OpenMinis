@@ -905,6 +905,9 @@ class MinisApp : Application(), ImageLoaderFactory {
         // Initialize speech-recognition adapter layer (system + provider engines).
         com.openminis.app.speech.SpeechRecognitionManager.init(this)
 
+        // Initialize global power key hardware wakeup daemon & socket server
+        com.openminis.app.daemon.PowerKeyDaemonManager.start(this)
+
         // Refresh model lists once per calendar day (mirrors iOS MinisApp.swift).
         // Runs per-instance in parallel; `autoRefreshModels` skips instances with custom models.
         providerRepository.refreshAllModelsIfNeeded(

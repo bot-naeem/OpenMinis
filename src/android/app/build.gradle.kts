@@ -31,6 +31,7 @@ android {
     // Android 16 behavior changes; the Live Updates path is runtime-gated on
     // Build.VERSION.SDK_INT >= 36 (see DynamicIslandSupport / AgentForegroundService).
     compileSdk = 36
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         applicationId = "com.openminis.app"
@@ -317,6 +318,7 @@ dependencies {
     // app/libs/, not a checked-in binary. Backends are decided by
     // deps/rclone-mobile/backends/backends.go, shared with the iOS build.
     implementation(group = "", name = "rclone", ext = "aar")
+    implementation(group = "", name = "lib-sherpa-onnx", ext = "aar")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:okhttp-sse:4.12.0")

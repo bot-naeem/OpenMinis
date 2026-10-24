@@ -170,7 +170,10 @@ object SpeechRecognitionManager {
         appContext = context.applicationContext
         prefs = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+        com.openminis.app.speech.ondevice.OnDeviceSpeechModelManager.init(appContext)
+
         engines.clear()
+        engines.add(com.openminis.app.speech.ondevice.SherpaOnnxSpeechRecognitionEngine(appContext))
         engines.add(SystemSpeechRecognitionEngine(appContext))
         engines.add(ProviderSpeechRecognitionEngine(appContext))
 
@@ -240,8 +243,14 @@ object SpeechRecognitionManager {
         }
     }
 
-    private fun pickDefaultEngineId(): String =
-        engines.firstOrNull { it.isAvailable }?.id ?: "system"
+    private fun pickDefaultEngineId(): String {
+        if (com.openminis.app.speech.ondevice.OnDeviceSpeechModelManager.isModelReady(appContext) &&
+            com.openminis.app.speech.ondevice.OnDeviceSpeechModelManager.isPreferred.value
+        ) {
+            return "ondevice:sherpa"
+        }
+        return engines.firstOrNull { it.isAvailable }?.id ?: "system"
+    }
 
     fun selectEngine(id: String) {
         if (_selectedEngineId.value == id) return

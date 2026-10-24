@@ -248,6 +248,7 @@ object ScreenTool {
             com.openminis.app.ime.ImeManager.acquire(context, sid)
             com.openminis.app.notification.HeadsUpNotificationManager.acquire(context, sid)
             com.openminis.app.ui.aurora.AuroraGlowManager.acquire(context, sid)
+            com.openminis.app.ui.overlay.AgentInterventionOverlayManager.show(context, sid)
         }
 
         return when (action) {

@@ -34,10 +34,42 @@ class AuroraGlowManagerTest {
         assertTrue(states.contains("EXECUTING"))
         assertTrue(states.contains("PAUSED"))
         assertTrue(states.contains("COMPLETED"))
+        assertTrue(states.contains("LISTENING"))
+        assertTrue(states.contains("INTERVENTION"))
     }
 
     @Test
     fun `old floating tool overlay capsule is explicitly decommissioned`() {
         assertTrue(ToolOverlayController.DECOMMISSIONED)
     }
+
+    @Test
+    fun `shutter blink listener receives hide and restore dispatches`() {
+        var hideCount = 0
+        var restoreCount = 0
+
+        val listener = object : ShutterBlinkListener {
+            override fun onShutterHide() {
+                hideCount++
+            }
+
+            override fun onShutterRestore() {
+                restoreCount++
+            }
+        }
+
+        AuroraGlowManager.registerShutterListener(listener)
+        AuroraGlowManager.hideForShutter(10L)
+        assertEquals(1, hideCount)
+
+        AuroraGlowManager.restoreAfterShutter()
+        // Wait briefly for main handler dispatch if not on main thread
+        Thread.sleep(50)
+        assertEquals(1, restoreCount)
+
+        AuroraGlowManager.unregisterShutterListener(listener)
+        AuroraGlowManager.hideForShutter(10L)
+        assertEquals(1, hideCount) // Should remain 1 after unregister
+    }
 }
+
